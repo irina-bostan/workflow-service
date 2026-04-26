@@ -1,0 +1,99 @@
+{
+  "dashboardName": "workflow-service-production",
+  "widgets": [
+    {
+      "type": "metric",
+      "title": "Requests per Minute",
+      "metrics": [
+        ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${ALB_ARN_SUFFIX}", {"stat": "Sum", "period": 60, "label": "Requests/min"}]
+      ],
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "HTTP Error Rates",
+      "metrics": [
+        ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "${ALB_ARN_SUFFIX}", {"stat": "Sum", "period": 60, "label": "5xx", "color": "#d62728"}],
+        ["AWS/ApplicationELB", "HTTPCode_Target_4XX_Count", "LoadBalancer", "${ALB_ARN_SUFFIX}", {"stat": "Sum", "period": 60, "label": "4xx", "color": "#ff7f0e"}]
+      ],
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "Latency Percentiles (ms)",
+      "metrics": [
+        ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${ALB_ARN_SUFFIX}", {"stat": "p50", "period": 60, "label": "p50", "color": "#2ca02c"}],
+        ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${ALB_ARN_SUFFIX}", {"stat": "p95", "period": 60, "label": "p95", "color": "#ff7f0e"}],
+        ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${ALB_ARN_SUFFIX}", {"stat": "p99", "period": 60, "label": "p99", "color": "#d62728"}]
+      ],
+      "yAxis": {"left": {"label": "Seconds"}},
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "ECS CPU & Memory Utilisation (%)",
+      "metrics": [
+        ["AWS/ECS", "CPUUtilization", "ClusterName", "${ECS_CLUSTER_NAME}", "ServiceName", "workflow-service", {"stat": "Average", "period": 60, "label": "CPU %"}],
+        ["AWS/ECS", "MemoryUtilization", "ClusterName", "${ECS_CLUSTER_NAME}", "ServiceName", "workflow-service", {"stat": "Average", "period": 60, "label": "Memory %"}]
+      ],
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "Booking Creation Rate",
+      "metrics": [
+        ["workflow-service", "booking.created", {"stat": "Sum", "period": 60, "label": "Bookings created/min"}]
+      ],
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "Search Cache Hit Ratio",
+      "metrics": [
+        ["workflow-service", "search.cache", "result", "hit", {"stat": "Sum", "period": 60, "label": "Cache Hits"}],
+        ["workflow-service", "search.cache", "result", "miss", {"stat": "Sum", "period": 60, "label": "Cache Misses"}]
+      ],
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "RDS Connections",
+      "metrics": [
+        ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${RDS_INSTANCE_ID}", {"stat": "Maximum", "period": 60, "label": "DB Connections"}]
+      ],
+      "annotations": {
+        "horizontal": [{"value": 180, "label": "Warning threshold", "color": "#ff7f0e"}]
+      },
+      "period": 60,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "RDS Free Storage (GB)",
+      "metrics": [
+        ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", "${RDS_INSTANCE_ID}", {"stat": "Average", "period": 300, "label": "Free Storage"}]
+      ],
+      "annotations": {
+        "horizontal": [{"value": 10737418240, "label": "10 GB warning", "color": "#ff7f0e"}]
+      },
+      "period": 300,
+      "view": "timeSeries"
+    },
+    {
+      "type": "metric",
+      "title": "SQS Queue Depth (booking-events.fifo)",
+      "metrics": [
+        ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "booking-events.fifo", {"stat": "Maximum", "period": 60, "label": "Messages in queue"}],
+        ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", "booking-events.fifo", {"stat": "Maximum", "period": 60, "label": "Oldest message age (s)"}]
+      ],
+      "period": 60,
+      "view": "timeSeries"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+@startuml WorkflowService-ComponentDiagram
+!define RELATIVE_INCLUDE "./lib"
+!include lib/C4_Component.puml
+
+LAYOUT_LEFT_RIGHT()
+title Component Diagram — Workflow Service (inside the ECS task)
+
+' ─── Actors / external systems ────────────────────────────────────────────
+Person(user, "Employee", "iOS / Android user")
+System_Ext(ui, "React Native App", "ui/ — Expo SDK 52\nBearer JWT, EXPO_PUBLIC_API_URL")
+System_Ext(cognito, "AWS Cognito", "User pool\nJWKS endpoint (/.well-known/jwks.json)")
+System_Ext(duffel, "Duffel API", "External flight-search provider")
+
+ContainerDb(postgres, "PostgreSQL 16", "RDS Multi-AZ — db.r6g.large", "employees, bookings,\nappointments, outbox")
+ContainerDb(redis, "Redis 7", "ElastiCache", "Search cache (5 min TTL)")
+Container_Ext(sqs, "SQS FIFO", "booking-events.fifo")
+Container_Ext(adot, "ADOT collector", "Sidecar (loopback :4318)", "Forwards OTLP →\nCloudWatch + X-Ray")
+
+' ─── App boundary ──────────────────────────────────────────────────────────
+Container_Boundary(app, "workflow-service (ECS Fargate task)") {
+
+    Boundary(filters, "Web filters") {
+        Component(secFilter, "Spring Security\nOAuth2 resource server", "BearerTokenAuthenticationFilter", "Verifies JWT signature\nagainst Cognito JWKS")
+        Component(reqLog, "RequestLoggingFilter", "OncePerRequestFilter", "Method · status · duration\n→ MDC traceId/spanId")
+    }
+
+    Boundary(web, "Web — OpenAPI delegates") {
+        Component(employeesDel, "EmployeesApiDelegateImpl", "Spring", "POST /employees")
+        Component(bookingsDel, "BookingsApiDelegateImpl", "Spring", "POST/GET /bookings\nGET /bookings/search\nPOST /bookings/{id}/appointments")
+        Component(exHandler, "GlobalExceptionHandler", "@RestControllerAdvice", "Domain exceptions →\nApiError JSON body")
+    }
+
+    Boundary(domain, "Domain services (@Transactional)") {
+        Component(employeeSvc, "EmployeeService", "Spring", "Register employee,\nunique-constraint check")
+        Component(bookingSvc, "BookingService", "Spring", "Idempotency check (DB)\n→ insert booking + outbox\nin one tx")
+        Component(searchSvc, "SearchService", "Spring @Cacheable", "Falls through to Duffel\non cache miss")
+        Component(apptSvc, "AppointmentService", "Spring", "Schedule appointment\non existing booking")
+    }
+
+    Boundary(persistence, "Persistence (Spring Data JPA + Hibernate)") {
+        Component(employeeRepo, "EmployeeRepository", "JpaRepository")
+        Component(bookingRepo, "BookingRepository", "JpaRepository", "findByIdempotencyKey()\nfindByEmployeeId(Pageable)")
+        Component(apptRepo, "AppointmentRepository", "JpaRepository")
+        Component(outboxRepo, "OutboxRepository", "JpaRepository", "claimPending(N) ←\nFOR UPDATE SKIP LOCKED\ndeleteSentBefore(cutoff)")
+    }
+
+    Boundary(messaging, "Async — Transactional Outbox") {
+        Component(outboxRelay, "OutboxRelay", "@Scheduled (500 ms in prod)", "claim 100 pending\n→ publish → mark SENT\nhourly purge of SENT > 24h")
+        Component(sqsPub, "SqsBookingEventPublisher", "@ConditionalOnProperty\naws.sqs.enabled", "messageGroupId = employeeId\nmessageDeduplicationId = bookingId")
+        Component(duffelClient, "DuffelSearchProvider", "Spring RestClient", "Bearer token\nexponential backoff retry")
+    }
+}
+
+' ─── Inbound ──────────────────────────────────────────────────────────────
+Rel(user, ui, "Uses")
+Rel(ui, secFilter, "HTTPS + Bearer JWT", "JSON")
+Rel(secFilter, cognito, "Fetch JWKS (cached)", "HTTPS")
+Rel(secFilter, reqLog, "authenticated request")
+Rel(reqLog, employeesDel, "→ /employees")
+Rel(reqLog, bookingsDel, "→ /bookings/*")
+
+' ─── Delegate → service ──────────────────────────────────────────────────
+Rel(employeesDel, employeeSvc, "register()")
+Rel(bookingsDel, bookingSvc, "create() / find()")
+Rel(bookingsDel, searchSvc, "search()")
+Rel(bookingsDel, apptSvc, "create()")
+
+' ─── Service → repository ─────────────────────────────────────────────────
+Rel(employeeSvc, employeeRepo, "save / findByEmployeeId")
+Rel(bookingSvc, employeeRepo, "exists check")
+Rel(bookingSvc, bookingRepo, "findByIdempotencyKey / save")
+Rel(bookingSvc, outboxRepo, "save (same tx)")
+Rel(apptSvc, bookingRepo, "lookup")
+Rel(apptSvc, apptRepo, "save")
+
+' ─── Repositories → DB ───────────────────────────────────────────────────
+Rel(employeeRepo, postgres, "JDBC via HikariCP\n(max=20, min-idle=5,\nleak-detection=10s)", "JDBC")
+Rel(bookingRepo, postgres, "JDBC", "JDBC")
+Rel(apptRepo, postgres, "JDBC", "JDBC")
+Rel(outboxRepo, postgres, "JDBC", "JDBC")
+
+' ─── Cache ───────────────────────────────────────────────────────────────
+Rel(searchSvc, redis, "@Cacheable get/put\n(Lettuce client)", "RESP")
+
+' ─── Outbox flow ─────────────────────────────────────────────────────────
+Rel(outboxRelay, outboxRepo, "claimPending(100)\nFOR UPDATE SKIP LOCKED")
+Rel(outboxRelay, sqsPub, "publishBookingCreated()")
+Rel(sqsPub, sqs, "SendMessage", "AWS SDK v2")
+
+' ─── External search ────────────────────────────────────────────────────
+Rel(searchSvc, duffelClient, "on cache miss")
+Rel(duffelClient, duffel, "GET /search", "HTTPS")
+
+' ─── Domain exceptions → response ───────────────────────────────────────
+Rel_R(bookingSvc, exHandler, "throws domain exception")
+Rel_R(employeeSvc, exHandler, "throws domain exception")
+Rel_R(apptSvc, exHandler, "throws domain exception")
+
+' ─── Observability ───────────────────────────────────────────────────────
+Rel(reqLog, adot, "OTLP traces + metrics\n(Micrometer + OTel)", "HTTP :4318")
+
+@enduml

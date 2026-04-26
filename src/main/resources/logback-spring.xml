@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="workflow-service"/>
+    <springProperty scope="context" name="activeProfile" source="spring.profiles.active" defaultValue="local"/>
+    <springProperty scope="context" name="jsonStructureEnabled"
+                    source="logging.json-structure.enabled" defaultValue="true"/>
+
+    <!-- Human-readable console (dev/local) -->
+    <appender name="CONSOLE_TEXT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-} spanId=%X{spanId:-} corrId=%X{correlationId:-}] %logger{40} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Structured JSON (CloudWatch / OTel collector ingest) -->
+    <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp/>
+                <logLevel/>
+                <loggerName/>
+                <threadName/>
+                <message/>
+                <stackTrace/>
+                <mdc/>
+                <pattern>
+                    <pattern>{"app":"${appName}","profile":"${activeProfile}"}</pattern>
+                </pattern>
+            </providers>
+        </encoder>
+    </appender>
+
+    <!--
+        Async wrapper for the JSON appender. At 100 rps with ~5 log lines/req we emit ~500
+        lines/sec/task; a synchronous ConsoleAppender would block request threads on stdout
+        I/O. The buffer holds ~4 s worth of logs at peak; if it fills, neverBlock=true drops
+        rather than stalls the request thread (visibility traded for latency stability).
+    -->
+    <appender name="ASYNC_JSON" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>2048</queueSize>
+        <neverBlock>true</neverBlock>
+        <includeCallerData>false</includeCallerData>
+        <appender-ref ref="CONSOLE_JSON"/>
+    </appender>
+
+    <!--
+        Output selection driven by `logging.json-structure.enabled` (default true).
+        application-dev.yaml and application-local.yaml override to false → text output.
+        Janino is required for <if> evaluation; declared in pom.xml.
+    -->
+    <if condition='property("jsonStructureEnabled").equals("true")'>
+        <then>
+            <root level="INFO">
+                <appender-ref ref="ASYNC_JSON"/>
+            </root>
+        </then>
+        <else>
+            <root level="INFO">
+                <appender-ref ref="CONSOLE_TEXT"/>
+            </root>
+            <logger name="com.aniri" level="DEBUG"/>
+        </else>
+    </if>
+
+</configuration>

@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:workflow_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate.globally_quoted_identifiers: false
+  flyway:
+    enabled: false
+  cache:
+    type: simple
+
+aws:
+  sqs:
+    enabled: false
+
+duffel:
+  enabled: false
+
+security:
+  jwt:
+    enabled: false
+
+management:
+  tracing:
+    enabled: false
+
+logging:
+  json-structure:
+    enabled: false
+  level:
+    com.aniri: DEBUG

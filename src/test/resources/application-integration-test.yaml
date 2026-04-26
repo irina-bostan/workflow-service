@@ -1,0 +1,6 @@
+# Overrides applied by Testcontainers @DynamicPropertySource.
+# This file intentionally minimal — all test properties are injected dynamically.
+spring:
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false

@@ -1,0 +1,108 @@
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 100
+    max-connections: 8192
+
+logging:
+  json-structure:
+    # Default: structured JSON output (CloudWatch / OTel collector ingest).
+    # Override to false in dev/local to get human-readable text in the console.
+    enabled: true
+
+spring:
+  application:
+    name: workflow-service
+  jackson:
+    default-property-inclusion: NON_NULL
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          batch_size: 50
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+      group:
+        # Liveness: only the JVM/app state. External-dependency outages must NOT trigger
+        # a container restart — restarting won't fix Cognito or SQS.
+        liveness:
+          include: livenessState
+        # Readiness: app + things WITHOUT WHICH THIS POD CAN'T SERVE.
+        # Cognito/SQS are intentionally excluded — if they're down, every pod is down,
+        # removing pods from the LB makes things worse.
+        readiness:
+          include: readinessState, db, redis
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:http://localhost:4318/v1/metrics}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # Record full histograms for HTTP timings so CloudWatch / Prometheus can compute
+      # accurate percentiles per route (uri tag). Without this Spring only emits
+      # count/sum/max — no p95/p99 SLO tracking.
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+      # SLO buckets: emits a counter per bucket so dashboards can answer
+      # "what fraction of requests stayed under 150 ms in this window?".
+      slo:
+        http.server.requests: 50ms, 100ms, 150ms, 300ms, 500ms, 1s
+
+duffel:
+  enabled: false
+  api-token: ${DUFFEL_API_TOKEN:}
+  default-origin: LHR
+
+outbox:
+  relay:
+    # How often the outbox poller wakes up to publish PENDING events (ms).
+    # Tighten for lower e2e latency to consumers; widen if DB poll cost grows.
+    fixed-delay-ms: 2000
+
+notification:
+  executor:
+    core-pool-size: 4
+    max-pool-size: 20
+    queue-capacity: 200
+    await-termination-seconds: 30
+
+cors:
+  allowed-origins: "*"
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    url: /openapi.yaml
+    display-request-duration: true
+  api-docs:
+    enabled: false

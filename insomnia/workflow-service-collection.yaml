@@ -1,0 +1,505 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Workflow Service
+meta:
+  id: wrk_ff38ba5cd52b44e39a35971885b931c7
+  created: 1777207756933
+  modified: 1777207756933
+  description: ""
+collection:
+  - name: Employees
+    meta:
+      id: fld_6f4c61552ca347428a451401a8bdebc0
+      created: 1777207756936
+      modified: 1777207903170
+      sortKey: -1777207756937.5
+      description: ""
+    children:
+      - url: "{{ _.baseUrl }}/employees"
+        name: Register Employee
+        meta:
+          id: req_b283452db7c94372afbc37008356ce24
+          created: 1777207756937
+          modified: 1777208743520
+          isPrivate: false
+          description: Registers a new employee. Returns 201 with the Employee body on
+            success, 409 if employeeId or email already exists.
+          sortKey: -1777207756937
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "employeeId": "EMP9870",
+              "firstName": "Alice",
+              "lastName": "Smith",
+              "email": "alice.smith@techquarter.com",
+              "department": "Engineering",
+              "costCentreDefault": "CC-456"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+  - name: Auth (cognito-local)
+    meta:
+      id: fld_8e9285765da14d0eb96728cd4a3c743d
+      created: 1777207756936
+      modified: 1777208725761
+      sortKey: -1777207756938
+      description: ""
+    children:
+      - url: "{{ _.cognitoUrl }}/"
+        name: Get ID Token (USER_PASSWORD_AUTH)
+        meta:
+          id: req_f904ff68762741d2b7adde550e0a67cc
+          created: 1777207756936
+          modified: 1777207756936
+          isPrivate: false
+          description: Calls cognito-local to mint an ID token. The response script
+            auto-stores AuthenticationResult.IdToken into the `token` env var.
+            The cognitoClientId env var is printed by local/setup-cognito.sh.
+          sortKey: -1777207756936
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "AuthFlow": "USER_PASSWORD_AUTH",
+              "ClientId": "{{ _.cognitoClientId }}",
+              "AuthParameters": {
+                "USERNAME": "{{ _.cognitoUsername }}",
+                "PASSWORD": "{{ _.cognitoPassword }}"
+              }
+            }
+        headers:
+          - name: Content-Type
+            value: application/x-amz-json-1.1
+          - name: X-Amz-Target
+            value: AWSCognitoIdentityProviderService.InitiateAuth
+        scripts:
+          afterResponse: >-
+            if (insomnia.response.status === 200) {
+                const body = insomnia.response.json();
+                if (body && body.AuthenticationResult && body.AuthenticationResult.IdToken) {
+                    insomnia.environment.set('token', body.AuthenticationResult.IdToken);
+                }
+            }
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+  - name: Bookings
+    meta:
+      id: fld_82bb474df1f84aadb18ff9503a84dc00
+      created: 1777207756937
+      modified: 1777207756937
+      sortKey: -1777207756937
+      description: ""
+    children:
+      - url: "{{ _.baseUrl }}/bookings"
+        name: Create Hotel Booking
+        meta:
+          id: req_19774eb635bf4f23ad11ff8fe1010072
+          created: 1777207756937
+          modified: 1777208569268
+          isPrivate: false
+          description: Creates a hotel booking. Hotel bookings require returnDate. Returns
+            201 with the Booking body — the response script auto-stores `id`
+            into the `bookingId` env var so the appointments endpoint can use it
+            immediately.
+          sortKey: -1777207756989
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "employeeId": "EMP9876",
+              "resourceType": "HOTEL",
+              "destination": "NYC",
+              "departureDate": "2027-11-05T14:00:00Z",
+              "returnDate": "2027-11-08T11:00:00Z",
+              "travelerCount": 1,
+              "costCenterRef": "CC-456",
+              "tripPurpose": "Client meeting - Acme Corp"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: Idempotency-Key
+            value: "{% uuid 'v4' %}"
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        scripts:
+          afterResponse: |-
+            if (insomnia.response.status === 201) {
+                const body = insomnia.response.json();
+                if (body && body.id) {
+                    insomnia.environment.set('bookingId', body.id);
+                }
+            }
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings"
+        name: Create Flight Booking
+        meta:
+          id: req_7a5dbb4f4e2e4316955d185aa7b41551
+          created: 1777207756937
+          modified: 1777208544918
+          isPrivate: false
+          description: Creates a flight booking. Requires Idempotency-Key header. Returns
+            201 with the Booking body.
+          sortKey: -1777207757039
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "employeeId": "EMP9876",
+              "resourceType": "FLIGHT",
+              "destination": "NYC",
+              "departureDate": "2027-11-05T08:00:00Z",
+              "returnDate": "2027-11-08T18:00:00Z",
+              "travelerCount": 1,
+              "costCenterRef": "CC-456",
+              "tripPurpose": "Client meeting - Acme Corp"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: Idempotency-Key
+            value: "{% uuid 'v4' %}"
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings"
+        name: List Bookings (paginated)
+        meta:
+          id: req_0f88bcfdff564d2782926fabc74889f6
+          created: 1777207756938
+          modified: 1777208715148
+          isPrivate: false
+          description: Returns PagedBookingResponse for an employee. Sorted by createdAt
+            descending.
+          sortKey: -1777207756839
+        method: GET
+        parameters:
+          - name: employeeId
+            value: "{{ _.employeeId }}"
+            description: ""
+            disabled: false
+          - name: page
+            value: "0"
+            description: ""
+            disabled: false
+          - name: size
+            value: "10"
+            description: ""
+            disabled: false
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings"
+        name: Duplicate Booking (same Idempotency-Key) — shows idempotency
+        meta:
+          id: req_8286f8f1f63448548e86f8b5d4e7b9a9
+          created: 1777207756938
+          modified: 1777208586419
+          isPrivate: false
+          description: Run this request twice with the same Idempotency-Key. The second
+            response is identical to the first, and only one booking is
+            persisted.
+          sortKey: -1777207756976.5
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "employeeId": "EMP9876",
+              "resourceType": "FLIGHT",
+              "destination": "NYC",
+              "departureDate": "2027-11-05T08:00:00Z",
+              "travelerCount": 1,
+              "costCenterRef": "CC-456"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+          - name: Idempotency-Key
+            value: 00000000-0000-0000-0000-000000000001
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings/search"
+        name: Search Flights
+        meta:
+          id: req_e63d1f528e6245479acac3f10cfc9b87
+          created: 1777207756938
+          modified: 1777208627302
+          isPrivate: false
+          description: Search available flights. Results are cached in Redis for 5
+            minutes. Returns array of BookingSearch.
+          sortKey: -1777207756945.25
+        method: GET
+        parameters:
+          - name: resourceType
+            value: FLIGHT
+          - name: destination
+            value: PARIS
+          - name: departureDate
+            value: "{% faker 'randomDateRecent' %}"
+          - name: returnDate
+            value: "{% faker 'randomDateFuture' %}"
+          - name: travelerCount
+            value: "1"
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings/search"
+        name: Search Hotels
+        meta:
+          id: req_0157bdaea2ef45999e3562a381c79fbf
+          created: 1777207756939
+          modified: 1777208599544
+          isPrivate: false
+          description: Search available hotels. Results are cached in Redis for 5 minutes.
+            Returns array of BookingSearch.
+          sortKey: -1777207756951.5
+        method: GET
+        parameters:
+          - name: resourceType
+            value: HOTEL
+            description: ""
+            disabled: false
+          - name: destination
+            value: NYC
+            description: ""
+            disabled: false
+          - name: departureDate
+            value: "{% faker 'randomDateRecent' %}"
+            description: ""
+            disabled: false
+          - name: returnDate
+            value: "{% faker 'randomDateFuture' %}"
+            description: ""
+            disabled: false
+          - name: travelerCount
+            value: "1"
+            description: ""
+            disabled: false
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings/{{ _.bookingId }}/appointments"
+        name: Create Appointment (under hotel booking)
+        meta:
+          id: req_b69cbbef96db421288ce14063db1974f
+          created: 1777207756939
+          modified: 1777208639174
+          isPrivate: false
+          description: "Schedule an appointment within an existing hotel booking. Path
+            bookingId is authoritative. appointmentType: CHECK_IN | SPA |
+            RESTAURANT | CONCIERGE. 422 if the booking is not a HOTEL."
+          sortKey: -1777207756939
+        method: POST
+        body:
+          mimeType: application/json
+          text: |-
+            {
+              "appointmentType": "SPA",
+              "scheduledAt": "2027-11-06T10:00:00Z",
+              "notes": "Couple's massage, 60 minutes"
+            }
+        headers:
+          - name: Content-Type
+            value: application/json
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+  - name: Health & Docs
+    meta:
+      id: fld_bb98c1a3a9bc40c9ba4bc251ef371b02
+      created: 1777207756939
+      modified: 1777207756939
+      sortKey: -1777207756939
+      description: ""
+    children:
+      - url: "{{ _.baseUrl }}/actuator/health"
+        name: Actuator Health
+        meta:
+          id: req_25ca819ef42848138bff2925ab81d3c5
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: "Returns {status: UP} when the service is healthy. Public endpoint
+            — no token needed."
+          sortKey: -1777207756940
+        method: GET
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/swagger-ui.html"
+        name: Swagger UI
+        meta:
+          id: req_2ce54c6cfa464b08bfcb91916e581c42
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: Opens the Swagger UI for interactive API exploration. Public.
+          sortKey: -1777207756940
+        method: GET
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/actuator/prometheus"
+        name: Prometheus Metrics
+        meta:
+          id: req_e443844b2f4041b6a98349c597a1c564
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: Scrape endpoint for Prometheus / OTel collector. Public.
+          sortKey: -1777207756940
+        method: GET
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_7b00fe50340f95a27cf03c60e13284c9de84989f
+    created: 1777207756941
+    modified: 1777208725760
+environments:
+  name: Base Environment
+  meta:
+    id: env_7a7533922cef4cacab8edfca0132d81c
+    created: 1777207756934
+    modified: 1777208725760
+    isPrivate: false
+  data:
+    employeeId: EMP9876
+    bookingId: REPLACE_WITH_HOTEL_BOOKING_UUID
+    token: REPLACE_WITH_ID_TOKEN
+  subEnvironments:
+    - name: Staging
+      meta:
+        id: env_1e49439263234264b41c88541eb0a060
+        created: 1777207756935
+        modified: 1777207944898
+        isPrivate: false
+        sortKey: 3
+      data:
+        baseUrl: https://staging.techquarter.com
+      color: "#e6b400"
+    - name: Production
+      meta:
+        id: env_916dc2a9f91f4c439f71a7f7afb28c33
+        created: 1777207756935
+        modified: 1777207948863
+        isPrivate: false
+        sortKey: 4
+      data:
+        baseUrl: https://api.techquarter.com
+      color: "#d62828"
+    - name: Local
+      meta:
+        id: env_e6303a302317420c91741c41ef250fa9
+        created: 1777207756935
+        modified: 1777208725760
+        isPrivate: false
+        sortKey: 2
+      data:
+        baseUrl: http://localhost:8080
+        cognitoUrl: http://localhost:9229
+        cognitoClientId: 6ox31ez0bokpz2uc42ltmeibb
+        cognitoUsername: tester@techquarter.local
+        cognitoPassword: Test1234!
+        employeeId: EMP9876
+        bookingId: ""
+        token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkNvZ25pdG9Mb2NhbCJ9.eyJhdXRoX3RpbWUiOjE3NzcxNzk5MTUsImNsaWVudF9pZCI6IjZveDMxZXowYm9rcHoydWM0Mmx0bWVpYmIiLCJldmVudF9pZCI6IjkyMWFjOGViLWRiZGItNGQzYy1hMWI5LThhYTkxOTE5NGMxNSIsImlhdCI6MTc3NzE3OTkxNSwianRpIjoiNmYyMmY4MjktODBlMC00MDJhLWJkNzItMDkxYzIxYzk1MDA2Iiwic2NvcGUiOiJhd3MuY29nbml0by5zaWduaW4udXNlci5hZG1pbiIsInN1YiI6IjE5YzhmZjE4LThmNzUtNGQ1ZS1hNTkyLTgyZmM4OGExYzgzOSIsInRva2VuX3VzZSI6ImFjY2VzcyIsInVzZXJuYW1lIjoiMTljOGZmMTgtOGY3NS00ZDVlLWE1OTItODJmYzg4YTFjODM5IiwiZXhwIjoxNzc3MjY2MzE1LCJpc3MiOiJodHRwOi8vMC4wLjAuMDo5MjI5L2xvY2FsXzcwVm5qdkRTIn0.zpwO33dggxDWmFPROTBLK4G4jQcwyC1eoM2oRFtKNYOwJSSiPRH28VwF7Ei6bBZbGgjHye2yM6CcJ_d29v1zfAiSB1I36QNdoYo_UWcYpIHh42pm48LedKuuUV3MSSj_hmlK-vRFr4rRysQ0CpTDCrCzmuh1nnXVoUMyR_P9FSeo0RRdpi45TgyGwsZlpvh8FVCUW1iKX2yTnmAefRrctY4_Zn7viIjpuw8-fJ8jIhw8WVZpNx9XTEZjH1OQsIG14ZQqlEnw7ACMdoJiCcrxPZRJAZcYhRrMv0Z4WffrvLKce0JKnPPzbZ405-uone4bg_4VrEmx1BsUmB2IG9pv5g
+      color: "#7d69cb"

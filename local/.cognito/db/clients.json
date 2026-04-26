@@ -1,0 +1,20 @@
+{
+  "Clients": {
+    "6ox31ez0bokpz2uc42ltmeibb": {
+      "ClientId": "6ox31ez0bokpz2uc42ltmeibb",
+      "ClientName": "workflow-service-local",
+      "CreationDate": "2026-04-26T04:51:18.149Z",
+      "ExplicitAuthFlows": [
+        "ALLOW_USER_PASSWORD_AUTH",
+        "ALLOW_REFRESH_TOKEN_AUTH"
+      ],
+      "LastModifiedDate": "2026-04-26T04:51:18.149Z",
+      "TokenValidityUnits": {
+        "AccessToken": "hours",
+        "IdToken": "minutes",
+        "RefreshToken": "days"
+      },
+      "UserPoolId": "local_70VnjvDS"
+    }
+  }
+}

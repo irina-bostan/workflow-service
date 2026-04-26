@@ -1,0 +1,41 @@
+@startuml Sequence-RegisterEmployee
+title Register Employee — Sequence Diagram
+
+actor Client
+participant "ALB" as alb
+participant "Spring Security\nBearer JWT filter" as jwt
+participant "RequestLoggingFilter" as reqLog
+participant "EmployeesApiDelegateImpl" as delegate
+participant "EmployeeService\n(@Transactional)" as svc
+database "EmployeeRepository\n(PostgreSQL)" as repo
+
+Client -> alb: POST /employees\n{employeeId, firstName, lastName, email, department}
+alb -> jwt: forward
+jwt -> jwt: verify Bearer JWT
+jwt -> reqLog: authorized
+reqLog -> delegate: filtered + logged
+
+delegate -> delegate: @Valid via OpenAPI generator\n(notBlank, email, pattern)
+
+alt validation fails
+    delegate --> Client: 400 ApiError\n{reasonCode: VALIDATION_FAILED, details: ...}
+else validation passes
+    delegate -> svc: register(dto)
+    activate svc
+
+    svc -> repo: existsByEmployeeId / existsByEmail
+    alt duplicate
+        repo --> svc: true
+        svc --> delegate: throw DuplicateEmployeeException
+        note right: GlobalExceptionHandler maps to\n409 ApiError {reasonCode: DUPLICATE_EMPLOYEE}
+        delegate --> Client: 409 ApiError
+    else unique
+        repo --> svc: false
+        svc -> repo: save(EmployeeEntity)
+        repo --> svc: persisted (id, createdAt, version)
+        svc --> delegate: toDto(saved)
+        delegate --> Client: 201 Employee (bare resource)
+    end
+    deactivate svc
+end
+@enduml

@@ -1,0 +1,43 @@
+@startuml Sequence-CreateAppointment
+title Create Hotel Appointment — Sequence Diagram
+
+actor Client
+participant "ALB" as alb
+participant "Spring Security\nBearer JWT filter" as jwt
+participant "RequestLoggingFilter" as reqLog
+participant "BookingsApiDelegateImpl" as delegate
+participant "AppointmentService\n(@Transactional)" as svc
+database "BookingRepository\n(PostgreSQL)" as bookRepo
+database "AppointmentRepository\n(PostgreSQL)" as apptRepo
+
+Client -> alb: POST /bookings/{bookingId}/appointments\n{appointmentType, scheduledAt, notes}
+alb -> jwt: forward
+jwt -> reqLog: authorized
+reqLog -> delegate: filtered + logged
+
+delegate -> delegate: @Valid (appointmentType notNull,\nscheduledAt future)
+delegate -> svc: create(request)
+activate svc
+
+svc -> bookRepo: findById(bookingId)
+
+alt booking not found
+    bookRepo --> svc: Optional.empty()
+    svc --> delegate: throw BookingNotFoundException
+    note right: GlobalExceptionHandler →\n404 ApiError {reasonCode: BOOKING_NOT_FOUND}
+    delegate --> Client: 404 ApiError
+else booking is FLIGHT (appointments only allowed on hotels)
+    bookRepo --> svc: BookingEntity (resourceType=FLIGHT)
+    svc --> delegate: throw InvalidBookingRequestException
+    note right: 422 ApiError\n"Appointments can only be created for hotel bookings"
+    delegate --> Client: 422 ApiError
+else booking is HOTEL
+    bookRepo --> svc: BookingEntity (resourceType=HOTEL)
+    svc -> apptRepo: save(AppointmentEntity)
+    apptRepo --> svc: persisted (id, createdAt)
+    svc --> delegate: toDto(saved)
+    delegate --> Client: 201 Appointment (bare resource)
+end
+
+deactivate svc
+@enduml

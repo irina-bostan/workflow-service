@@ -1,0 +1,448 @@
+openapi: "3.0.3"
+
+info:
+  title: Workflow Service API
+  description: TechQuarter corporate travel booking workflow service
+  version: "1.0.0"
+  contact:
+    name: TechQuarter Engineering
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://staging.techquarter.com
+    description: Staging
+  - url: https://api.techquarter.com
+    description: Production
+
+tags:
+  - name: Employees
+    description: Employee registration and management
+  - name: Bookings
+    description: Flight and hotel booking operations
+
+paths:
+  /employees:
+    post:
+      operationId: registerEmployee
+      tags: [ Employees ]
+      summary: Register a new employee
+      requestBody:
+        $ref: '#/components/requestBodies/CreateEmployeeRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreateEmployeeResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /bookings:
+    post:
+      operationId: createBooking
+      tags: [ Bookings ]
+      summary: Create a new flight or hotel booking
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: UUID to deduplicate concurrent or retried requests
+          schema:
+            type: string
+            format: uuid
+            example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+      requestBody:
+        $ref: '#/components/requestBodies/CreateBookingRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreateBookingResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+    get:
+      operationId: listBookings
+      tags: [ Bookings ]
+      summary: List bookings for an employee
+      parameters:
+        - name: employeeId
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "EMP9876"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated booking list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedBookingResponse'
+
+  /bookings/search:
+    get:
+      operationId: searchBookingOptions
+      tags: [ Bookings ]
+      summary: Search available flights or hotels
+      parameters:
+        - name: resourceType
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/ResourceType'
+        - name: destination
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "NYC"
+        - name: departureDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+            example: "2026-11-06T10:00:00.000Z"
+        - name: returnDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+            example: "2026-11-06T10:00:00.000Z"
+        - name: travelerCount
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/BookingSearchResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /bookings/{booking_id}/appointments:
+    post:
+      operationId: createAppointment
+      tags: [ Bookings ]
+      summary: Schedule an appointment within a hotel booking
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+      requestBody:
+        $ref: '#/components/requestBodies/CreateAppointmentRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreateAppointmentResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+components:
+  #  parameters:
+
+  requestBodies:
+    CreateEmployeeRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Employee'
+    CreateBookingRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Booking'
+    CreateAppointmentRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Appointment'
+
+  responses:
+    CreateEmployeeResponse:
+      description: "Employee record created."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Employee'
+    CreateBookingResponse:
+      description: Booking created
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Booking'
+    BookingSearchResponse:
+      description: Search results
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/BookingSearch'
+    CreateAppointmentResponse:
+      description: Appointment scheduled
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Appointment'
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnprocessableEntity:
+      description: Business rule violation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+
+  schemas:
+    ResourceType:
+      type: string
+      enum: [ FLIGHT, HOTEL ]
+
+    AppointmentType:
+      type: string
+      enum: [ CHECK_IN, SPA, RESTAURANT, CONCIERGE ]
+
+    Employee:
+      type: object
+      required: [ employeeId, firstName, lastName, email, department ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+        employeeId:
+          type: string
+          example: "EMP9876"
+        firstName:
+          type: string
+          maxLength: 256
+          example: "Alice"
+        lastName:
+          type: string
+          maxLength: 256
+          example: "Smith"
+        email:
+          type: string
+          format: email
+          example: "alice.smith@techquarter.com"
+        department:
+          type: string
+          maxLength: 256
+          example: "Engineering"
+        costCentreDefault:
+          type: string
+          maxLength: 100
+          example: "CC-456"
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-11-06T10:00:00.000Z"
+
+    Booking:
+      type: object
+      required: [ employeeId, resourceType, destination, departureDate, travelerCount, costCenterRef ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+        employeeId:
+          type: string
+          example: "EMP9876"
+        resourceType:
+          $ref: '#/components/schemas/ResourceType'
+        destination:
+          type: string
+          maxLength: 50
+          example: "NYC"
+        departureDate:
+          type: string
+          format: date-time
+          example: "2026-11-06T10:00:00.000Z"
+        returnDate:
+          type: string
+          format: date-time
+          example: "2026-11-06T10:00:00.000Z"
+        travelerCount:
+          type: integer
+          minimum: 1
+          maximum: 99
+          example: 1
+        costCenterRef:
+          type: string
+          maxLength: 50
+          example: "CC-456"
+        tripPurpose:
+          type: string
+          maxLength: 500
+          example: "Client meeting - Acme Corp"
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-05-01T14:15:11.000Z"
+
+    BookingStatus:
+      type: string
+      description: |
+        Booking lifecycle. PENDING immediately after creation; transitions to CONFIRMED
+        once the downstream provider acknowledges, or CANCELLED on user/provider cancellation.
+      enum: [ PENDING, CONFIRMED, CANCELLED ]
+      example: "PENDING"
+
+    BookingSearch:
+      type: object
+      properties:
+        providerId:
+          type: string
+          example: "NYC-68559"
+        resourceType:
+          $ref: '#/components/schemas/ResourceType'
+        origin:
+          type: string
+          example: "PARIS"
+        destination:
+          type: string
+          example: "NYC"
+        departureTime:
+          type: string
+          format: date-time
+          example: "2026-11-06T10:00:00.000Z"
+        arrivalTime:
+          type: string
+          format: date-time
+          example: "2026-11-06T10:00:00.000Z"
+        availableSeats:
+          type: integer
+          example: 45
+        pricePerPerson:
+          type: number
+          example: 145
+        currency:
+          type: string
+          example: "USD"
+        providerName:
+          type: string
+          example: "NYC Airport"
+
+    Appointment:
+      type: object
+      required: [ appointmentType, scheduledAt ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+          example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+        bookingId:
+          type: string
+          format: uuid
+          readOnly: true
+          example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+        appointmentType:
+          $ref: '#/components/schemas/AppointmentType'
+        scheduledAt:
+          type: string
+          format: date-time
+          example: "2026-11-06T10:00:00.000Z"
+        notes:
+          type: string
+          maxLength: 1000
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          example: "2026-11-06T10:00:00.000Z"
+
+    PagedBookingResponse:
+      type: object
+      properties:
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        bookings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+
+    Error:
+      type: object
+      properties:
+        source:
+          type: string
+          example: "com.aniri.workflow-service"
+        reasonCode:
+          type: string
+          example: "VALIDATION_ERROR"
+        description:
+          type: string
+          example: "The request has missing required parameters"
+        details:
+          type: string
+          example: "Field 'id' from object Employee is missing"
+        isRecoverable:
+          type: boolean
+          example: false
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

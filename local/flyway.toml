@@ -1,0 +1,40 @@
+databaseType = "PostgreSql"
+id = "ffe8dcd5-b5db-4c0f-9343-52a429d15a83"
+name = "workflow-service"
+
+[environments.local]
+password = "workflow"
+schemas = [ "public" ]
+url = "jdbc:postgresql://localhost:5432/workflowdb"
+user = "workflow"
+
+[environments.shadow]
+password = "workflow"
+schemas = [ "public" ]
+url = "jdbc:postgresql://localhost:5432/workflowdb_shadow"
+user = "workflow"
+
+[flyway]
+callbackLocations = [ "filesystem:callbacks" ]
+defaultSchema = "public"
+environment = "local"
+locations = [ "filesystem:../src/main/resources/db/migration" ]
+mixed = true
+outOfOrder = true
+schemaModelLocation = "schema-model"
+shadowEnvironment = "shadow"
+validateMigrationNaming = true
+
+[flywayDesktop]
+developmentEnvironment = "development"
+shadowEnvironment = "shadow"
+showDeploymentDecision = true
+
+[redgateCompare]
+filterFile = "filter.rgf"
+
+[redgateCompare.postgresql.options.behavior]
+detectRenames = "identical-only"
+
+[redgateCompare.postgresql.options.ignores]
+ignoreNewlinesInTextObjects = "off"

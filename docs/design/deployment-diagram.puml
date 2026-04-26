@@ -1,0 +1,75 @@
+@startuml DeploymentDiagram-AWS
+!define RELATIVE_INCLUDE "./lib"
+!include lib/C4_Deployment.puml
+
+title Deployment Diagram — AWS Production Architecture
+
+Deployment_Node(internet, "Internet", "Public") {
+    Person(user, "Employee", "React Native App")
+}
+
+Deployment_Node(aws, "AWS eu-west-1", "Cloud") {
+
+    Deployment_Node(edge, "Edge Layer") {
+        Container(route53, "Route 53", "DNS", "techquarter.com → ALB")
+        Container(waf, "AWS WAF", "L7 Firewall", "OWASP rules\nRate limiting: 100 req/s per IP")
+    }
+
+    Deployment_Node(publicSubnet, "Public Subnets (AZ-a, AZ-b)", "VPC") {
+        Container(alb, "Application Load Balancer", "HTTPS:443", "SSL termination\nHealth: /actuator/health\nTarget group: ECS tasks")
+    }
+
+    Deployment_Node(privateSubnet, "Private Subnets (AZ-a, AZ-b)", "VPC") {
+
+        Deployment_Node(ecsCluster, "ECS Fargate Cluster", "workflow-service") {
+            Container(task1, "ECS Task (AZ-a)", "2 vCPU / 4 GB\n+ ADOT sidecar", "workflow-service:latest\nPort 8080\nProfile: prod")
+            Container(task2, "ECS Task (AZ-b)", "2 vCPU / 4 GB\n+ ADOT sidecar", "workflow-service:latest\nPort 8080\nProfile: prod")
+            Container(taskN, "ECS Task (N)", "2 vCPU / 4 GB", "Scales 2→10 tasks\nPrimary trigger:\nALB requests/target = 80\nCPU 80% as safety net")
+        }
+
+        Deployment_Node(dataLayer, "Data Layer") {
+            ContainerDb(rdsPrimary, "RDS PostgreSQL 16\n(Primary)", "db.r6g.large\nMulti-AZ\n(t4g.medium in stage)", "employees, bookings,\nappointments, outbox\nFlyway migrations\nTuned autovacuum on outbox")
+            ContainerDb(rdsReplica, "RDS PostgreSQL 16\n(Standby)", "Sync replica AZ-b", "Automatic failover")
+            ContainerDb(redis, "ElastiCache Redis 7", "cache.t4g.micro", "Search results (5 min TTL)\n@Cacheable via Lettuce\nHikariCP: 20 conn/task,\nleak detection 10 s")
+        }
+
+        Deployment_Node(messaging, "Messaging") {
+            Container(sqs, "SQS FIFO Queue", "booking-events.fifo", "ContentBasedDeduplication\nmessageGroupId = employeeId")
+            Container(lambda, "Lambda", "NotificationProcessor\nNode 20.x", "Triggered by SQS\nSends email/push notifications")
+        }
+    }
+
+    Deployment_Node(supportServices, "Support Services") {
+        Container(ecr, "ECR", "Container Registry", "workflow-service:latest\nImmutable tags by git SHA")
+        Container(ssm, "SSM Parameter Store", "Secrets", "/workflow-service/db-url\n/workflow-service/redis-host\n/workflow-service/sqs-url")
+        Container(cloudwatch, "CloudWatch", "Observability", "Logs: /ecs/workflow-service\nMetrics: CPU, p99 latency\nAlarms → SNS → PagerDuty/Slack\nDashboard: booking KPIs")
+    }
+}
+
+Rel(user, route53, "HTTPS")
+Rel(route53, waf, "DNS resolution")
+Rel(waf, alb, "Filtered traffic")
+Rel(alb, task1, "Round-robin")
+Rel(alb, task2, "Round-robin")
+Rel(alb, taskN, "Round-robin")
+
+Rel(task1, rdsPrimary, "JDBC (HikariCP)", "private")
+Rel(task2, rdsPrimary, "JDBC (HikariCP)", "private")
+Rel(rdsPrimary, rdsReplica, "Replication")
+
+Rel(task1, redis, "Lettuce", "private")
+Rel(task2, redis, "Lettuce", "private")
+
+Rel(task1, sqs, "SqsAsyncClient", "private")
+Rel(task2, sqs, "SqsAsyncClient", "private")
+Rel(sqs, lambda, "Event trigger")
+
+Rel(ecr, task1, "Image pull")
+Rel(ecr, task2, "Image pull")
+Rel(ssm, task1, "Env vars injection at start")
+Rel(ssm, task2, "Env vars injection at start")
+
+Rel(task1, cloudwatch, "Logs + Metrics")
+Rel(task2, cloudwatch, "Logs + Metrics")
+
+@enduml

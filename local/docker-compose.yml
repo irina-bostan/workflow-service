@@ -1,0 +1,52 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: workflow-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  cognito-local:
+    image: jagregory/cognito-local:latest
+    container_name: workflow-cognito-local
+    ports:
+      - "9229:9229"
+    volumes:
+      - ./.cognito:/app/.cognito
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: workflow-jaeger
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP HTTP
+      - "4317:4317"     # OTLP gRPC
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  localstack:
+    image: localstack/localstack:3
+    container_name: workflow-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs,ssm,s3
+      DEFAULT_REGION: eu-west-1
+      LOCALSTACK_HOST: localhost.localstack.cloud
+      DEBUG: 0
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+volumes:
+  localstack-data:

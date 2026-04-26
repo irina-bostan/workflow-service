@@ -1,0 +1,67 @@
+@startuml Sequence-CreateBooking
+title Create Booking — Sequence Diagram (DB Idempotency + Transactional Outbox)
+
+actor Client
+participant "ALB" as alb
+participant "Spring Security\nBearer JWT filter" as jwt
+participant "RequestLoggingFilter" as reqLog
+participant "BookingsApiDelegateImpl" as delegate
+participant "BookingService\n(@Transactional)" as svc
+database "EmployeeRepository\n(PostgreSQL)" as empRepo
+database "BookingRepository\n(PostgreSQL)" as bookRepo
+database "OutboxRepository\n(PostgreSQL)" as outboxRepo
+participant "OutboxRelay\n(@Scheduled, 500 ms)" as relay
+participant "SqsBookingEventPublisher" as sqsPub
+queue "SQS FIFO\nbooking-events.fifo" as sqsQueue
+
+Client -> alb: POST /bookings\nIdempotency-Key: <uuid>\nAuthorization: Bearer <jwt>
+alb -> jwt: forward
+jwt -> jwt: verify signature (Cognito JWKS, cached)
+jwt -> reqLog: authorized
+reqLog -> delegate: filtered + logged
+
+delegate -> delegate: @Valid via OpenAPI generator
+delegate -> svc: create(booking, idempotencyKey)
+activate svc
+
+svc -> bookRepo: findByIdempotencyKey(key)
+alt idempotent replay (key already used)
+    bookRepo --> svc: Optional.of(existingBooking)
+    svc --> delegate: toDto(existing)
+    delegate --> Client: 201 Booking\n(same body as first call)
+else new request
+    bookRepo --> svc: Optional.empty()
+
+    svc -> empRepo: findByEmployeeId(employeeId)
+    alt employee not found
+        empRepo --> svc: Optional.empty()
+        svc --> delegate: throw EmployeeNotFoundException
+        note right: GlobalExceptionHandler maps to\n404 ApiError {reasonCode: EMPLOYEE_NOT_FOUND}
+        delegate --> Client: 404 ApiError
+    else employee exists
+        empRepo --> svc: EmployeeEntity
+        svc -> bookRepo: save(BookingEntity\nwith idempotency_key)
+        bookRepo --> svc: persisted entity
+        svc -> outboxRepo: save(PENDING outbox row)
+        note right: Same DB transaction as the booking insert —\nno dual-write window
+        outboxRepo --> svc: outbox entry id
+        svc --> delegate: toDto(saved)
+        delegate --> Client: 201 Booking
+    end
+end
+
+deactivate svc
+
+== Asynchronous publish (separate scheduler thread) ==
+
+relay -> outboxRepo: claimPending(100)\nFOR UPDATE SKIP LOCKED
+outboxRepo --> relay: pending rows (disjoint per task)
+loop each entry
+    relay -> sqsPub: publishBookingCreated(event)
+    sqsPub -> sqsQueue: SendMessage\nmessageGroupId = employeeId\nmessageDeduplicationId = bookingId
+    sqsQueue --> sqsPub: messageId
+    sqsPub --> relay: ok
+    relay -> outboxRepo: mark SENT (sent_at = now)
+end
+
+@enduml

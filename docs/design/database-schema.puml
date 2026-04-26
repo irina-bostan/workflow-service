@@ -1,0 +1,95 @@
+@startuml DatabaseSchema
+title Database Schema — workflow-service (PostgreSQL 16)
+
+' Authoritative DDL: src/main/resources/db/migration/V*.sql
+' All TIMESTAMPTZ. UUIDs via gen_random_uuid() at the DB; @Version optimistic-lock column on all aggregates.
+' Asterisk (*) = NOT NULL.
+
+skinparam linetype ortho
+
+entity "employees" as employees {
+  * id : UUID <<PK>>
+  --
+  * employee_id : VARCHAR(20) <<UNIQUE>>
+  * first_name : VARCHAR(100)
+  * last_name : VARCHAR(100)
+  * email : VARCHAR(255) <<UNIQUE>>
+  * department : VARCHAR(100)
+  cost_centre_default : VARCHAR(50)
+  * created_at : TIMESTAMPTZ
+  * updated_at : TIMESTAMPTZ
+  * version : BIGINT
+  --
+  idx idx_employees_employee_id (employee_id)
+  idx idx_employees_email (email)
+}
+
+entity "bookings" as bookings {
+  * id : UUID <<PK>>
+  --
+  * employee_id : VARCHAR(20) <<FK → employees.employee_id>>
+  * resource_type : VARCHAR(20)  // FLIGHT | HOTEL
+  * destination : VARCHAR(50)
+  * departure_date : TIMESTAMPTZ
+  return_date : TIMESTAMPTZ
+  * traveler_count : INTEGER  // CHECK >= 1
+  * cost_center_ref : VARCHAR(50)
+  trip_purpose : VARCHAR(500)
+  idempotency_key : VARCHAR(255) <<UNIQUE>>
+  * created_at : TIMESTAMPTZ
+  * updated_at : TIMESTAMPTZ
+  * version : BIGINT
+  --
+  idx idx_bookings_employee_id (employee_id)
+  idx idx_bookings_departure_date (departure_date)
+}
+
+entity "appointments" as appointments {
+  * id : UUID <<PK>>
+  --
+  * booking_id : UUID <<FK → bookings.id, ON DELETE CASCADE>>
+  * appointment_type : VARCHAR(30)  // CHECK_IN | SPA | RESTAURANT | CONCIERGE
+  * scheduled_at : TIMESTAMPTZ
+  notes : VARCHAR(1000)
+  * created_at : TIMESTAMPTZ
+  * updated_at : TIMESTAMPTZ
+  * version : BIGINT
+  --
+  idx idx_appointments_booking_id (booking_id)
+  idx idx_appointments_scheduled_at (scheduled_at)
+}
+
+entity "outbox" as outbox {
+  * id : UUID <<PK>>
+  --
+  * aggregate_type : VARCHAR(50)  // 'BOOKING'
+  * aggregate_id : UUID  // (logical ref to bookings.id, no FK)
+  * event_type : VARCHAR(100)  // 'BookingCreatedEvent'
+  * payload : TEXT  // JSON event body
+  * status : VARCHAR(20)  // PENDING | SENT | FAILED
+  * attempts : INTEGER  // 0..10 then FAILED
+  last_error : TEXT
+  * created_at : TIMESTAMPTZ
+  last_attempt_at : TIMESTAMPTZ
+  sent_at : TIMESTAMPTZ
+  --
+  idx idx_outbox_pending (created_at)
+      WHERE status = 'PENDING'  -- partial; hot path
+  autovacuum_vacuum_scale_factor = 0.05
+  autovacuum_vacuum_threshold = 1000
+}
+
+employees ||--o{ bookings : "1 employee → N bookings\n(employee_id)"
+bookings  ||--o{ appointments : "1 booking → N appointments\n(booking_id, ON DELETE CASCADE)"
+bookings  ..o{ outbox : "loose: aggregate_id\nrefers to bookings.id\n(no FK — outbox is\ndecoupled from aggregates)"
+
+note bottom of outbox
+  **Transactional outbox**
+  Bookings INSERT and outbox row are written in
+  the same DB transaction. OutboxRelay polls
+  every 500 ms (prod) with FOR UPDATE SKIP LOCKED
+  so multiple ECS tasks don't double-publish.
+  SENT rows older than 24 h are deleted hourly.
+end note
+
+@enduml

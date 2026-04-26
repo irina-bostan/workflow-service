@@ -1,0 +1,41 @@
+@startuml Sequence-SearchBookingOptions
+title Search Booking Options — Sequence Diagram (Cache-First)
+
+actor Client
+participant "ALB" as alb
+participant "Spring Security\nBearer JWT filter" as jwt
+participant "RequestLoggingFilter" as reqLog
+participant "BookingsApiDelegateImpl" as delegate
+participant "SearchService\n@Cacheable(\"searchResults\")" as svc
+database "Redis\n(ElastiCache)" as redis
+participant "DuffelSearchProvider" as duffel
+participant "Duffel API" as duffelExt
+
+Client -> alb: GET /bookings/search\n?resourceType=FLIGHT&destination=NYC\n&departureDate=...
+alb -> jwt: forward
+jwt -> reqLog: authorized
+reqLog -> delegate: filtered + logged
+
+delegate -> delegate: @Valid query params
+delegate -> svc: search(SearchRequest)
+activate svc
+
+note over svc: @Cacheable key =\nresourceType:destination:departureDate:travelerCount
+
+svc -> redis: GET searchResults::<key>
+alt Cache HIT (within 5 min TTL)
+    redis --> svc: cached List<SearchResult>
+    note right of redis: ~1 ms RTT in-region
+else Cache MISS
+    redis --> svc: nil
+    svc -> duffel: search(req)
+    duffel -> duffelExt: GET /search\nAuthorization: Bearer <duffel-token>
+    duffelExt --> duffel: providers
+    duffel --> svc: List<SearchResult>
+    svc -> redis: SET searchResults::<key>\nEX 300
+end
+
+svc --> delegate: List<SearchResult>
+deactivate svc
+delegate --> Client: 200 List<BookingSearch>
+@enduml

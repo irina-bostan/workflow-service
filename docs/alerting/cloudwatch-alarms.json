@@ -1,0 +1,131 @@
+{
+  "alarms": [
+    {
+      "name": "workflow-service-5xx-rate",
+      "description": "ALB 5xx count > 5 over 5 min — sustained error rate above the 0.1% SLO budget at 100 rps (30 k req / 5 min); fast burn",
+      "severity": "P1",
+      "metric": "HTTPCode_Target_5XX_Count",
+      "namespace": "AWS/ApplicationELB",
+      "statistic": "Sum",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "threshold": 5,
+      "comparisonOperator": "GreaterThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "LoadBalancer": "${ALB_ARN_SUFFIX}"
+      },
+      "alarmActions": ["${SNS_PAGERDUTY_ARN}"],
+      "okActions": ["${SNS_PAGERDUTY_ARN}"]
+    },
+    {
+      "name": "workflow-service-p95-latency",
+      "description": "ALB p95 response time > 200 ms over 5 min — SLO at risk for booking hot path (target p95 < 150 ms with buffer)",
+      "severity": "P2",
+      "metric": "TargetResponseTime",
+      "namespace": "AWS/ApplicationELB",
+      "extendedStatistic": "p95",
+      "period": 300,
+      "evaluationPeriods": 2,
+      "threshold": 0.2,
+      "comparisonOperator": "GreaterThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "LoadBalancer": "${ALB_ARN_SUFFIX}"
+      },
+      "alarmActions": ["${SNS_SLACK_ARN}"],
+      "okActions": ["${SNS_SLACK_ARN}"]
+    },
+    {
+      "name": "workflow-service-p99-latency",
+      "description": "ALB p99 response time > 1 second over 5 min — clear performance degradation; significant headroom over the 300 ms p99 SLO has been lost",
+      "severity": "P2",
+      "metric": "TargetResponseTime",
+      "namespace": "AWS/ApplicationELB",
+      "extendedStatistic": "p99",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "threshold": 1.0,
+      "comparisonOperator": "GreaterThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "LoadBalancer": "${ALB_ARN_SUFFIX}"
+      },
+      "alarmActions": ["${SNS_SLACK_ARN}"],
+      "okActions": ["${SNS_SLACK_ARN}"]
+    },
+    {
+      "name": "workflow-service-ecs-cpu",
+      "description": "ECS service CPU > 80% sustained — autoscaling may be insufficient",
+      "severity": "P2",
+      "metric": "CPUUtilization",
+      "namespace": "AWS/ECS",
+      "statistic": "Average",
+      "period": 300,
+      "evaluationPeriods": 2,
+      "threshold": 80,
+      "comparisonOperator": "GreaterThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "ClusterName": "${ECS_CLUSTER_NAME}",
+        "ServiceName": "workflow-service"
+      },
+      "alarmActions": ["${SNS_SLACK_ARN}"],
+      "okActions": ["${SNS_SLACK_ARN}"]
+    },
+    {
+      "name": "workflow-service-rds-storage",
+      "description": "RDS free storage < 10 GB — disk growth risk",
+      "severity": "P2",
+      "metric": "FreeStorageSpace",
+      "namespace": "AWS/RDS",
+      "statistic": "Average",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "threshold": 10737418240,
+      "comparisonOperator": "LessThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "DBInstanceIdentifier": "${RDS_INSTANCE_ID}"
+      },
+      "alarmActions": ["${SNS_SLACK_ARN}"],
+      "okActions": ["${SNS_SLACK_ARN}"]
+    },
+    {
+      "name": "workflow-service-sqs-age",
+      "description": "SQS oldest message > 60 seconds — booking event processing delayed",
+      "severity": "P2",
+      "metric": "ApproximateAgeOfOldestMessage",
+      "namespace": "AWS/SQS",
+      "statistic": "Maximum",
+      "period": 60,
+      "evaluationPeriods": 1,
+      "threshold": 60,
+      "comparisonOperator": "GreaterThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "QueueName": "booking-events.fifo"
+      },
+      "alarmActions": ["${SNS_PAGERDUTY_ARN}"],
+      "okActions": ["${SNS_PAGERDUTY_ARN}"]
+    },
+    {
+      "name": "workflow-service-rds-connections",
+      "description": "RDS connections > 180 — approaching HikariCP max pool limit (20 * 10 tasks)",
+      "severity": "P2",
+      "metric": "DatabaseConnections",
+      "namespace": "AWS/RDS",
+      "statistic": "Maximum",
+      "period": 300,
+      "evaluationPeriods": 1,
+      "threshold": 180,
+      "comparisonOperator": "GreaterThanThreshold",
+      "treatMissingData": "notBreaching",
+      "dimensions": {
+        "DBInstanceIdentifier": "${RDS_INSTANCE_ID}"
+      },
+      "alarmActions": ["${SNS_SLACK_ARN}"],
+      "okActions": ["${SNS_SLACK_ARN}"]
+    }
+  ]
+}

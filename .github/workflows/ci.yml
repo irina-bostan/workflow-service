@@ -26,11 +26,8 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Run unit and slice tests
-        run: mvn test -B
-
-      - name: Run integration tests (Testcontainers)
-        run: mvn verify -B -DskipUnitTests
+      - name: Run all tests (unit, integration, Cucumber BDD)
+        run: mvn verify -B
 
       - name: Upload test reports
         if: always()

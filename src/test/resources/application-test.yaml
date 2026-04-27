@@ -21,6 +21,12 @@ aws:
 duffel:
   enabled: false
 
+outbox:
+  relay:
+    fixed-delay-ms: 3600000
+  cleanup:
+    fixed-delay-ms: 3600000
+
 security:
   jwt:
     enabled: false

@@ -9,6 +9,7 @@ import com.aniri.workflow_service.domain.booking.model.BookingEntity;
 import com.aniri.workflow_service.domain.booking.model.BookingRepository;
 import com.aniri.workflow_service.domain.booking.model.ResourceType;
 import com.aniri.workflow_service.web.model.Appointment;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,7 +24,18 @@ public class AppointmentService {
     private final BookingRepository bookingRepository;
     private final AppointmentMapper appointmentMapper;
 
+    @Transactional(readOnly = true)
+    public java.util.List<Appointment> findByBookingId(final java.util.UUID bookingId) {
+        if (!bookingRepository.existsById(bookingId)) {
+            throw new BookingNotFoundException(bookingId);
+        }
+        return appointmentRepository.findByBookingIdOrderByScheduledAtAsc(bookingId).stream()
+                .map(appointmentMapper::toDto)
+                .toList();
+    }
+
     @Transactional
+    @Observed(name = "appointment.create", contextualName = "AppointmentService#create")
     public Appointment create(final Appointment appointment) {
         final BookingEntity booking = bookingRepository.findById(appointment.getBookingId())
                 .orElseThrow(() -> new BookingNotFoundException(appointment.getBookingId()));

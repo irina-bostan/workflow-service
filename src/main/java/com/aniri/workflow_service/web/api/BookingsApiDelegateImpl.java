@@ -45,6 +45,17 @@ public class BookingsApiDelegateImpl implements BookingsApiDelegate {
     }
 
     @Override
+    public ResponseEntity<Booking> getBooking(final UUID bookingId) {
+        return ResponseEntity.ok(bookingMapper.toDto(bookingService.findById(bookingId)));
+    }
+
+    @Override
+    public ResponseEntity<Booking> cancelBooking(final UUID bookingId) {
+        final Booking dto = bookingMapper.toDto(bookingService.cancelByUser(bookingId, "Cancelled by user"));
+        return ResponseEntity.ok(dto);
+    }
+
+    @Override
     public ResponseEntity<PagedBookingResponse> listBookings(final String employeeId,
                                                              final Integer page,
                                                              final Integer size) {
@@ -87,6 +98,11 @@ public class BookingsApiDelegateImpl implements BookingsApiDelegate {
 
         final Appointment createdAppointment = appointmentService.create(appointment);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdAppointment);
+    }
+
+    @Override
+    public ResponseEntity<List<Appointment>> listAppointments(final UUID bookingId) {
+        return ResponseEntity.ok(appointmentService.findByBookingId(bookingId));
     }
 
     private static void validateBooking(final Booking booking) {

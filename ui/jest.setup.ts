@@ -3,7 +3,13 @@
  */
 
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
-jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+// MaterialCommunityIcons is required by react-native-paper for the chevron in
+// List.Accordion (and other glyphs). Without it, any test that renders an
+// accordion / chip with an icon throws "node on an unmounted component".
+jest.mock('@expo/vector-icons', () => ({
+  Ionicons: 'Ionicons',
+  MaterialCommunityIcons: 'MaterialCommunityIcons',
+}));
 
 // react-native-calendars relies on native-ish layout APIs; in tests we replace Agenda
 // with a thin React component that renders every item inline so RNTL can find them by text.

@@ -19,6 +19,7 @@ export interface SearchResult {
 
 export interface BookingResponse {
   id: string;
+  tripId: string;
   employeeId: string;
   resourceType: ResourceType;
   destination: string;
@@ -28,6 +29,8 @@ export interface BookingResponse {
   costCenterRef: string;
   tripPurpose?: string;
   status: BookingStatus;
+  providerRef?: string;
+  cancellationReason?: string;
   createdAt: string;
 }
 
@@ -78,6 +81,9 @@ export interface CreateBookingRequest {
   travelerCount: number;
   costCenterRef: string;
   tripPurpose?: string;
+  /** Optional — supply a tripId from a prior booking response to link this booking
+   *  into the same trip. Cancellation cascades across siblings sharing a tripId. */
+  tripId?: string;
 }
 
 export interface SearchParams {
@@ -86,4 +92,19 @@ export interface SearchParams {
   departureDate?: string;
   returnDate?: string;
   travelerCount?: number;
+}
+
+export interface Appointment {
+  id: string;
+  bookingId: string;
+  appointmentType: AppointmentType;
+  scheduledAt: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface CreateAppointmentRequest {
+  appointmentType: AppointmentType;
+  scheduledAt: string;
+  notes?: string;
 }

@@ -14,6 +14,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 START_BACKEND=true
 
+COGNITO_SEED_DIR="$SCRIPT_DIR/.cognito/seed"
+COGNITO_DB_DIR="$SCRIPT_DIR/.cognito/db"
+
 for arg in "$@"; do
   case "$arg" in
     --no-start) START_BACKEND=false ;;
@@ -24,9 +27,29 @@ for arg in "$@"; do
   esac
 done
 
-# ─── 1. Compose up ────────────────────────────────────────────────────────────
+# ─── 1. Seed cognito-local DB (only if empty — preserves runtime mutations) ──
+mkdir -p "$COGNITO_DB_DIR"
+SEEDED=false
+for seed in "$COGNITO_SEED_DIR"/*.json; do
+  [[ -f "$seed" ]] || continue
+  target="$COGNITO_DB_DIR/$(basename "$seed")"
+  if [[ ! -f "$target" ]]; then
+    cp "$seed" "$target"
+    echo "▶ Seeded $(basename "$target") (fixed pool/client IDs from .cognito/seed/)"
+    SEEDED=true
+  fi
+done
+
+# ─── 2. Compose up ────────────────────────────────────────────────────────────
 echo "▶ Starting Docker Compose services (postgres, redis, localstack, cognito-local)..."
 docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d
+
+# cognito-local reads its DB once at startup. If we just dropped a new seed
+# next to an already-running container, restart it so the file gets picked up.
+if $SEEDED && docker ps --format '{{.Names}}' | grep -q '^workflow-cognito-local$'; then
+  echo "▶ Restarting cognito-local to load freshly-seeded state..."
+  docker restart workflow-cognito-local >/dev/null
+fi
 
 # ─── 2. Wait for each service ─────────────────────────────────────────────────
 echo "▶ Waiting for services to be healthy..."
@@ -59,14 +82,25 @@ echo "  · cognito-local ready"
 # ─── 3. LocalStack: SQS queue + SSM parameters ────────────────────────────────
 echo "▶ Provisioning LocalStack (SQS + SSM)..."
 docker exec workflow-localstack awslocal sqs create-queue \
+  --queue-name booking-events-dlq.fifo \
+  --attributes FifoQueue=true \
+  --region eu-west-1 >/dev/null 2>&1 || true
+
+DLQ_ARN=$(docker exec workflow-localstack awslocal sqs get-queue-attributes \
+  --queue-url "http://sqs.eu-west-1.localhost.localstack.cloud:4566/000000000000/booking-events-dlq.fifo" \
+  --attribute-names QueueArn \
+  --query 'Attributes.QueueArn' --output text 2>/dev/null || echo "")
+
+docker exec workflow-localstack awslocal sqs create-queue \
   --queue-name booking-events.fifo \
-  --attributes FifoQueue=true,ContentBasedDeduplication=true \
+  --attributes FifoQueue=true,ContentBasedDeduplication=true,RedrivePolicy="{\"deadLetterTargetArn\":\"$DLQ_ARN\",\"maxReceiveCount\":\"3\"}" \
   --region eu-west-1 >/dev/null 2>&1 || true
 
 for kv in \
   "/workflow-service/db-url|jdbc:postgresql://localhost:5432/workflowdb" \
   "/workflow-service/redis-host|localhost" \
-  "/workflow-service/sqs-booking-events-url|http://sqs.eu-west-1.localhost.localstack.cloud:4566/000000000000/booking-events.fifo"
+  "/workflow-service/sqs-booking-events-url|http://sqs.eu-west-1.localhost.localstack.cloud:4566/000000000000/booking-events.fifo" \
+  "/workflow-service/sqs-booking-events-dlq-url|http://sqs.eu-west-1.localhost.localstack.cloud:4566/000000000000/booking-events-dlq.fifo"
 do
   name="${kv%%|*}"
   value="${kv##*|}"
@@ -74,36 +108,16 @@ do
     --name "$name" --value "$value" --type String --overwrite >/dev/null 2>&1 || true
 done
 
-# ─── 4. cognito-local: pool, client, test user → capture Client ID ────────────
-echo "▶ Provisioning cognito-local..."
-COGNITO_OUTPUT=$(bash "$SCRIPT_DIR/setup-cognito.sh")
-echo "$COGNITO_OUTPUT" | sed 's/^/  /'
+# ─── 4. cognito-local: pool/client/user are pre-seeded; just print the IDs ───
+echo "▶ cognito-local seeded with fixed IDs:"
+bash "$SCRIPT_DIR/setup-cognito.sh" | sed 's/^/  /'
 
-CLIENT_ID=$(echo "$COGNITO_OUTPUT" | awk -F': *' '/^[[:space:]]*Client ID/ {print $2; exit}')
-if [[ -z "${CLIENT_ID:-}" ]]; then
-  echo "✘ Could not extract Cognito Client ID from setup-cognito.sh output." >&2
-  exit 1
-fi
-
-# ─── 5. Sync ui/.env with the captured Client ID ──────────────────────────────
+# ─── 5. Bootstrap ui/.env from the template on first run ─────────────────────
 UI_ENV="$PROJECT_DIR/ui/.env"
 UI_ENV_EXAMPLE="$PROJECT_DIR/ui/.env.example"
 if [[ ! -f "$UI_ENV" && -f "$UI_ENV_EXAMPLE" ]]; then
   cp "$UI_ENV_EXAMPLE" "$UI_ENV"
   echo "▶ Created ui/.env from .env.example"
-fi
-
-if [[ -f "$UI_ENV" ]]; then
-  if grep -q '^EXPO_PUBLIC_COGNITO_CLIENT_ID=' "$UI_ENV"; then
-    # Portable in-place update (avoids GNU vs BSD sed -i divergence)
-    awk -v id="$CLIENT_ID" '
-      /^EXPO_PUBLIC_COGNITO_CLIENT_ID=/ {print "EXPO_PUBLIC_COGNITO_CLIENT_ID=" id; next}
-      {print}
-    ' "$UI_ENV" >"$UI_ENV.tmp" && mv "$UI_ENV.tmp" "$UI_ENV"
-  else
-    echo "EXPO_PUBLIC_COGNITO_CLIENT_ID=$CLIENT_ID" >>"$UI_ENV"
-  fi
-  echo "▶ Wrote Cognito Client ID into ui/.env"
 fi
 
 # ─── 6. Done ──────────────────────────────────────────────────────────────────

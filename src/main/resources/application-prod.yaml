@@ -44,6 +44,7 @@ aws:
   sqs:
     enabled: true
     booking-events-queue-url: ${SQS_BOOKING_EVENTS_URL}
+    dlq-url: ${SQS_BOOKING_EVENTS_DLQ_URL:}
 
 # Faster outbox drain at peak: 100-row batch every 500 ms = up to 200 events/sec/task.
 # 2 tasks → 400/sec drain capacity vs 100 rps inflow → 4× headroom.

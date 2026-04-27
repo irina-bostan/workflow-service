@@ -9,6 +9,7 @@ import com.aniri.workflow_service.web.model.BookingSearch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
@@ -55,6 +56,29 @@ class SearchServiceTest {
 
         assertThat(results).extracting(BookingSearch::getProviderId).containsExactly("DUFFEL-001");
         verify(duffelProvider).search(request);
+    }
+
+    @Test
+    void search_hotelMockFallback_defaultsCheckOutToCheckInPlusOneWhenNotProvided() {
+        final SearchService service = new SearchService(Optional.empty(), searchMapper);
+        final SearchRequest request = SearchRequest.builder()
+                .resourceType(ResourceType.HOTEL)
+                .destination("NYC")
+                .departureDate(OffsetDateTime.parse("2027-11-05T08:00:00Z"))
+                .travelerCount(1)
+                .build();
+
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<List<SearchResult>> captor = ArgumentCaptor.forClass(List.class);
+        when(searchMapper.toDtoList(captor.capture())).thenReturn(List.of());
+
+        service.search(request);
+
+        // arrivalTime must be populated; otherwise the UI sends booking.returnDate=null,
+        // which the controller's validateBooking rejects with 422.
+        final SearchResult result = captor.getValue().getFirst();
+        assertThat(result.arrivalTime()).isEqualTo(OffsetDateTime.parse("2027-11-06T08:00:00Z"));
+        assertThat(result.departureTime()).isEqualTo(OffsetDateTime.parse("2027-11-05T08:00:00Z"));
     }
 
     private static SearchRequest newRequest() {

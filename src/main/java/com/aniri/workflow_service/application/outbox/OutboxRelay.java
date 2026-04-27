@@ -6,6 +6,7 @@ import com.aniri.workflow_service.domain.outbox.OutboxEntry;
 import com.aniri.workflow_service.domain.outbox.OutboxRepository;
 import com.aniri.workflow_service.domain.outbox.OutboxStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -37,6 +38,7 @@ public class OutboxRelay {
 
     @Scheduled(fixedDelayString = "${outbox.relay.fixed-delay-ms:2000}")
     @Transactional
+    @Observed(name = "outbox.publish", contextualName = "OutboxRelay#publishPending")
     public void publishPending() {
         final List<OutboxEntry> pending = outboxRepository.claimPending(CLAIM_BATCH_SIZE);
         if (pending.isEmpty()) return;
@@ -74,8 +76,7 @@ public class OutboxRelay {
     @Scheduled(fixedDelayString = "${outbox.cleanup.fixed-delay-ms:3600000}")
     @Transactional
     public void purgeSent() {
-        final OffsetDateTime cutoff = OffsetDateTime.now(ZoneOffset.UTC)
-                .minus(SENT_RETENTION_HOURS, ChronoUnit.HOURS);
+        final OffsetDateTime cutoff = OffsetDateTime.now(ZoneOffset.UTC).minusHours(SENT_RETENTION_HOURS);
         final int deleted = outboxRepository.deleteSentBefore(cutoff);
         if (deleted > 0) {
             log.info("Outbox purge removed {} sent rows older than {}", deleted, cutoff);

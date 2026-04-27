@@ -15,18 +15,20 @@ interface Props {
   extra?: React.ReactNode;
   /** Date format applied to departure/return; defaults to short locale date */
   formatDate?: (iso: string) => string;
+  /** When provided, the card becomes tappable and invokes this callback. */
+  onPress?: () => void;
 }
 
 const defaultFormat = (iso: string) => new Date(iso).toLocaleDateString();
 
-export function BookingCard({ booking, extra, formatDate = defaultFormat }: Props) {
+export function BookingCard({ booking, extra, formatDate = defaultFormat, onPress }: Props) {
   // If the server hasn't sent status (old build, missing migration, malformed payload)
   // skip the chip rather than rendering an empty grey square that pretends to be a state.
   const status = booking.status;
   const knownColor = status ? STATUS_COLOR[status] : undefined;
   const color = knownColor ?? '#616161';
   return (
-    <Card style={styles.card}>
+    <Card style={styles.card} onPress={onPress}>
       <Card.Content>
         <View style={styles.header}>
           <Text variant="titleSmall" style={styles.title}>

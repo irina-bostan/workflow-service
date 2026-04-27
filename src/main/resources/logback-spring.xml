@@ -9,7 +9,7 @@
     <!-- Human-readable console (dev/local) -->
     <appender name="CONSOLE_TEXT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-} spanId=%X{spanId:-} corrId=%X{correlationId:-}] %logger{40} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [traceId=%X{traceId:-} spanId=%X{spanId:-} obs=%X{observation:-} corrId=%X{correlationId:-}] %logger{40} - %msg%n</pattern>
         </encoder>
     </appender>
 
@@ -21,9 +21,9 @@
                 <logLevel/>
                 <loggerName/>
                 <threadName/>
-                <message/>
                 <stackTrace/>
                 <mdc/>
+                <message/>
                 <pattern>
                     <pattern>{"app":"${appName}","profile":"${activeProfile}"}</pattern>
                 </pattern>

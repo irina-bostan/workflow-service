@@ -47,6 +47,19 @@ describe('SearchScreen', () => {
     expect(mockedSearch).not.toHaveBeenCalled();
   });
 
+  it('blocks the search and alerts when hotel is selected without a check-out date', () => {
+    const { getByPlaceholderText, getByText } = renderSearch();
+    fireEvent.press(getByText('Hotels'));
+    fireEvent.changeText(getByPlaceholderText('e.g. NYC'), 'NYC');
+    fireEvent.press(getByText('Search'));
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Validation',
+      expect.stringContaining('check-out'),
+    );
+    expect(mockedSearch).not.toHaveBeenCalled();
+  });
+
   it('renders a result card after a successful search', async () => {
     mockedSearch.mockResolvedValueOnce([flightResult]);
 

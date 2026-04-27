@@ -23,3 +23,18 @@ export async function listBookings(
   });
   return data;
 }
+
+export async function getBooking(id: string): Promise<BookingResponse> {
+  const { data } = await apiClient.get<BookingResponse>(`/bookings/${id}`);
+  return data;
+}
+
+export async function cancelBooking(id: string): Promise<BookingResponse> {
+  const { data } = await apiClient.post<BookingResponse>(`/bookings/${id}/cancel`);
+  return data;
+}
+
+export async function listTripBookings(tripId: string): Promise<BookingResponse[]> {
+  const { data } = await apiClient.get<BookingResponse[]>(`/trips/${tripId}/bookings`);
+  return data;
+}

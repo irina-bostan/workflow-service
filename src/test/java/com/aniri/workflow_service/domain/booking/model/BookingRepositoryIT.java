@@ -36,6 +36,7 @@ class BookingRepositoryIT {
                 .travelerCount(1)
                 .costCenterRef("CC-456")
                 .idempotencyKey("idem-key-123")
+                .tripId(java.util.UUID.randomUUID())
                 .build());
 
         final Optional<BookingEntity> found = bookingRepository.findByIdempotencyKey("idem-key-123");

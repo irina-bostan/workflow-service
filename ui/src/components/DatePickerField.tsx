@@ -4,25 +4,49 @@ import { Button, Surface, Text, TouchableRipple, useTheme } from 'react-native-p
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 
+type PickerMode = 'date' | 'datetime';
+
 interface Props {
   label: string;
   value: Date | null;
   onChange: (date: Date) => void;
   minimumDate?: Date;
+  /** When 'datetime', the picker captures hours/minutes too. iOS shows a combined
+   *  picker; Android chains date → time pickers since it has no native datetime mode. */
+  mode?: PickerMode;
   style?: object;
 }
 
-export function DatePickerField({ label, value, onChange, minimumDate, style }: Props) {
+export function DatePickerField({
+  label,
+  value,
+  onChange,
+  minimumDate,
+  mode = 'date',
+  style,
+}: Props) {
   const [show, setShow] = useState(false);
+  // Android uses a separate time-picker step after the date is picked.
+  const [androidStep, setAndroidStep] = useState<'date' | 'time'>('date');
   const [tempDate, setTempDate] = useState<Date>(value ?? new Date());
   const theme = useTheme();
 
-  function handleChange(_: DateTimePickerEvent, selected?: Date) {
+  function handleIosChange(_: DateTimePickerEvent, selected?: Date) {
     if (selected) setTempDate(selected);
-    if (Platform.OS === 'android') {
-      setShow(false);
-      if (selected) onChange(selected);
+  }
+
+  function handleAndroidChange(_: DateTimePickerEvent, selected?: Date) {
+    setShow(false);
+    if (!selected) return;
+    if (mode === 'datetime' && androidStep === 'date') {
+      // Date chosen — open the time picker next.
+      setTempDate(selected);
+      setAndroidStep('time');
+      setShow(true);
+      return;
     }
+    onChange(selected);
+    setAndroidStep('date'); // reset for next use
   }
 
   function handleConfirm() {
@@ -30,14 +54,28 @@ export function DatePickerField({ label, value, onChange, minimumDate, style }: 
     setShow(false);
   }
 
+  function openPicker() {
+    setTempDate(value ?? new Date());
+    setAndroidStep('date');
+    setShow(true);
+  }
+
   const displayValue = value
-    ? value.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+    ? mode === 'datetime'
+      ? value.toLocaleString(undefined, {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : value.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
     : label;
 
   return (
     <View style={[styles.container, style]}>
       <TouchableRipple
-        onPress={() => setShow(true)}
+        onPress={openPicker}
         style={[styles.field, { borderColor: theme.colors.outline }]}
       >
         <View style={styles.row}>
@@ -52,9 +90,9 @@ export function DatePickerField({ label, value, onChange, minimumDate, style }: 
             <Surface style={styles.sheet} elevation={4}>
               <DateTimePicker
                 value={tempDate}
-                mode="date"
+                mode={mode}
                 display="inline"
-                onChange={handleChange}
+                onChange={handleIosChange}
                 minimumDate={minimumDate}
                 style={styles.picker}
               />
@@ -71,10 +109,11 @@ export function DatePickerField({ label, value, onChange, minimumDate, style }: 
         show && (
           <DateTimePicker
             value={tempDate}
-            mode="date"
+            mode={mode === 'datetime' ? androidStep : 'date'}
             display="default"
-            onChange={handleChange}
+            onChange={handleAndroidChange}
             minimumDate={minimumDate}
+            is24Hour
           />
         )
       )}

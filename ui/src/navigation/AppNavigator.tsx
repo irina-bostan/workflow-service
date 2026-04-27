@@ -6,11 +6,19 @@ import { SearchScreen } from '../screens/SearchScreen';
 import { BookingFormScreen } from '../screens/BookingFormScreen';
 import { BookingsScreen } from '../screens/BookingsScreen';
 import { UpcomingBookingsScreen } from '../screens/UpcomingBookingsScreen';
+import { BookingDetailScreen } from '../screens/BookingDetailScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
-import type { RootTabParamList, SearchStackParamList } from './types';
+import type {
+  BookingsStackParamList,
+  RootTabParamList,
+  SearchStackParamList,
+  UpcomingStackParamList,
+} from './types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const SearchStack = createNativeStackNavigator<SearchStackParamList>();
+const BookingsStack = createNativeStackNavigator<BookingsStackParamList>();
+const UpcomingStack = createNativeStackNavigator<UpcomingStackParamList>();
 
 function SearchNavigator() {
   return (
@@ -21,7 +29,46 @@ function SearchNavigator() {
         component={BookingFormScreen}
         options={{ title: 'Book Trip' }}
       />
+      <SearchStack.Screen
+        name="BookingDetail"
+        component={BookingDetailScreen}
+        options={{ title: 'Booking' }}
+      />
     </SearchStack.Navigator>
+  );
+}
+
+function BookingsNavigator() {
+  return (
+    <BookingsStack.Navigator>
+      <BookingsStack.Screen
+        name="Bookings"
+        component={BookingsScreen}
+        options={{ title: 'My Bookings' }}
+      />
+      <BookingsStack.Screen
+        name="BookingDetail"
+        component={BookingDetailScreen}
+        options={{ title: 'Booking' }}
+      />
+    </BookingsStack.Navigator>
+  );
+}
+
+function UpcomingNavigator() {
+  return (
+    <UpcomingStack.Navigator>
+      <UpcomingStack.Screen
+        name="Upcoming"
+        component={UpcomingBookingsScreen}
+        options={{ title: 'Upcoming' }}
+      />
+      <UpcomingStack.Screen
+        name="BookingDetail"
+        component={BookingDetailScreen}
+        options={{ title: 'Booking' }}
+      />
+    </UpcomingStack.Navigator>
   );
 }
 
@@ -45,16 +92,8 @@ export function AppNavigator() {
       })}
     >
       <Tab.Screen name="SearchTab" component={SearchNavigator} options={{ title: 'Search' }} />
-      <Tab.Screen
-        name="BookingsTab"
-        component={BookingsScreen}
-        options={{ title: 'My Bookings', headerShown: true }}
-      />
-      <Tab.Screen
-        name="UpcomingTab"
-        component={UpcomingBookingsScreen}
-        options={{ title: 'Upcoming', headerShown: true }}
-      />
+      <Tab.Screen name="BookingsTab" component={BookingsNavigator} options={{ title: 'My Bookings' }} />
+      <Tab.Screen name="UpcomingTab" component={UpcomingNavigator} options={{ title: 'Upcoming' }} />
       <Tab.Screen
         name="RegisterTab"
         component={RegisterScreen}

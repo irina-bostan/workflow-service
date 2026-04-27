@@ -10,11 +10,17 @@ jest.mock('../../api/bookings');
 const mockedList = listBookings as jest.MockedFunction<typeof listBookings>;
 
 function renderScreen() {
-  return render(
+  // addListener stub returns a no-op unsubscribe — matches React Navigation's contract
+  // for `navigation.addListener('focus', cb)` used by UpcomingBookingsScreen to refetch
+  // on focus.
+  const navigation = { navigate: jest.fn(), addListener: jest.fn(() => () => {}) } as any;
+  const route = { params: undefined } as any;
+  const utils = render(
     <PaperProvider>
-      <UpcomingBookingsScreen />
+      <UpcomingBookingsScreen navigation={navigation} route={route} />
     </PaperProvider>,
   );
+  return { ...utils, navigation };
 }
 
 function booking(
@@ -25,6 +31,7 @@ function booking(
 ): BookingResponse {
   return {
     id,
+    tripId: 'trip-' + id,
     employeeId: 'EMP9876',
     resourceType: 'FLIGHT',
     destination,

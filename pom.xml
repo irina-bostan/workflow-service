@@ -30,10 +30,21 @@
     <awssdk.version>2.29.0</awssdk.version>
     <openapi-generator.version>7.21.0</openapi-generator.version>
     <cucumber.version>7.20.1</cucumber.version>
+    <!-- Override Spring Boot 3.5.3's transitively-pinned OTel 1.49.0 — that version
+         bundles a shaded jctools that hits sun.misc.Unsafe.objectFieldOffset, which
+         Java 25 flags as terminally deprecated. 1.60+ ships a VarHandle-based jctools. -->
+    <opentelemetry.version>1.60.1</opentelemetry.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-bom</artifactId>
+        <version>${opentelemetry.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>io.cucumber</groupId>
         <artifactId>cucumber-bom</artifactId>

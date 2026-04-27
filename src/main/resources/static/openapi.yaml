@@ -136,7 +136,105 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
 
+  /bookings/{booking_id}:
+    get:
+      operationId: getBooking
+      tags: [ Bookings ]
+      summary: Fetch a single booking by id
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+      responses:
+        '200':
+          description: Booking found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{trip_id}/bookings:
+    get:
+      operationId: listTripBookings
+      tags: [ Bookings ]
+      summary: List all bookings within a trip
+      description: |
+        Returns every booking sharing the given tripId, regardless of status. Used by the
+        UI to show siblings on the booking detail screen and to reflect the cancel-cascade
+        effect (e.g. "Cancel trip (2 bookings)") before the user confirms.
+      parameters:
+        - name: trip_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bookings within the trip (may be a single booking)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+
+  /bookings/{booking_id}/cancel:
+    post:
+      operationId: cancelBooking
+      tags: [ Bookings ]
+      summary: Cancel a booking (user-initiated)
+      description: |
+        Cancels a PENDING or CONFIRMED booking. No-op if already CANCELLED.
+        Real upstream-provider integration would also need to call the provider's
+        order-cancel endpoint; the mock simply transitions the row.
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+      responses:
+        '200':
+          description: Booking cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /bookings/{booking_id}/appointments:
+    get:
+      operationId: listAppointments
+      tags: [ Bookings ]
+      summary: List appointments scheduled within a hotel booking
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Appointment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Appointment'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       operationId: createAppointment
       tags: [ Bookings ]
@@ -162,8 +260,6 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
 
 components:
-  #  parameters:
-
   requestBodies:
     CreateEmployeeRequest:
       required: true
@@ -237,7 +333,6 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
 
-
   schemas:
     ResourceType:
       type: string
@@ -294,6 +389,15 @@ components:
           format: uuid
           readOnly: true
           example: "8d6078a3-d8ff-40c8-8c0e-4cfbc7aa3fe5"
+        tripId:
+          type: string
+          format: uuid
+          description: |
+            Trip-grouping identifier. Bookings sharing a tripId are part of one trip and
+            user-initiated cancellation cascades across the group. Server-generated if
+            omitted on POST; supply an existing tripId (from a prior booking response) to
+            link the new booking into that trip.
+          example: "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
         employeeId:
           type: string
           example: "EMP9876"
@@ -327,6 +431,16 @@ components:
         status:
           $ref: '#/components/schemas/BookingStatus'
           readOnly: true
+        providerRef:
+          type: string
+          readOnly: true
+          description: Upstream provider reservation reference; populated when status is CONFIRMED.
+          example: "DUFFEL-ORD-7H8K2"
+        cancellationReason:
+          type: string
+          readOnly: true
+          description: Populated when status is CANCELLED.
+          example: "Provider rejected: no seats at this fare"
         createdAt:
           type: string
           format: date-time

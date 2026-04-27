@@ -108,6 +108,62 @@ class BookingsApiDelegateImplTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ─────────────────────────── GET /bookings/{id} ───────────────────────────────
+
+    @Test
+    void getBooking_existingId_returns200WithBooking() throws Exception {
+        final UUID bookingId = UUID.randomUUID();
+        final BookingEntity entity = BookingEntity.builder().id(bookingId).employeeId("EMP9876").build();
+
+        when(bookingService.findById(bookingId)).thenReturn(entity);
+        when(bookingMapper.toDto(entity)).thenReturn(
+                new Booking().id(bookingId).employeeId("EMP9876").destination("NYC"));
+
+        mockMvc.perform(get("/bookings/{bookingId}", bookingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(bookingId.toString()))
+                .andExpect(jsonPath("$.employeeId").value("EMP9876"));
+    }
+
+    @Test
+    void getBooking_unknownId_returns404() throws Exception {
+        final UUID bookingId = UUID.randomUUID();
+        when(bookingService.findById(bookingId)).thenThrow(new BookingNotFoundException(bookingId));
+
+        mockMvc.perform(get("/bookings/{bookingId}", bookingId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.reasonCode").value("BOOKING_NOT_FOUND"));
+    }
+
+    // ─────────────────── POST /bookings/{id}/cancel ───────────────────────────────
+
+    @Test
+    void cancelBooking_existingId_returns200WithCancelledBooking() throws Exception {
+        final UUID bookingId = UUID.randomUUID();
+        final BookingEntity entity = BookingEntity.builder().id(bookingId).employeeId("EMP9876").build();
+
+        when(bookingService.cancelByUser(eq(bookingId), anyString())).thenReturn(entity);
+        when(bookingMapper.toDto(entity)).thenReturn(
+                new Booking().id(bookingId).employeeId("EMP9876")
+                        .status(com.aniri.workflow_service.web.model.BookingStatus.CANCELLED));
+
+        mockMvc.perform(post("/bookings/{bookingId}/cancel", bookingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(bookingId.toString()))
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
+    void cancelBooking_unknownId_returns404() throws Exception {
+        final UUID bookingId = UUID.randomUUID();
+        when(bookingService.cancelByUser(eq(bookingId), anyString()))
+                .thenThrow(new BookingNotFoundException(bookingId));
+
+        mockMvc.perform(post("/bookings/{bookingId}/cancel", bookingId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.reasonCode").value("BOOKING_NOT_FOUND"));
+    }
+
     // ───────────────────────── GET /bookings/search ───────────────────────────────
 
     @Test

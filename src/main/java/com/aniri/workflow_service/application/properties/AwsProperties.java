@@ -9,7 +9,9 @@ public record AwsProperties(
         Credentials credentials,
         Sqs sqs
 ) {
-    public record Credentials(String accessKey, String secretKey) {}
+    public record Credentials(String accessKey, String secretKey) {
+    }
 
-    public record Sqs(boolean enabled, String bookingEventsQueueUrl) {}
+    public record Sqs(boolean enabled, String bookingEventsQueueUrl, String dlqUrl) {
+    }
 }

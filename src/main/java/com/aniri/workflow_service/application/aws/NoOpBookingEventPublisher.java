@@ -6,7 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-/** Active when {@code aws.sqs.enabled=false} (or unset). Keeps the port satisfied in dev. */
+/**
+ * Active when {@code aws.sqs.enabled=false} (or unset). Keeps the port satisfied in dev.
+ */
 @Service
 @ConditionalOnProperty(name = "aws.sqs.enabled", havingValue = "false", matchIfMissing = true)
 @Slf4j

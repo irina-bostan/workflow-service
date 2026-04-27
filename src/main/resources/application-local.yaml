@@ -3,8 +3,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:9229/local_70VnjvDS
-          jwk-set-uri: http://localhost:9229/local_70VnjvDS/.well-known/jwks.json
+          issuer-uri: http://localhost:9229/local_devwflow
+          jwk-set-uri: http://localhost:9229/local_devwflow/.well-known/jwks.json
   datasource:
     url: jdbc:postgresql://localhost:5432/workflowdb
     username: workflow
@@ -42,6 +42,7 @@ aws:
   sqs:
     enabled: true
     booking-events-queue-url: http://sqs.eu-west-1.localhost.localstack.cloud:4566/000000000000/booking-events.fifo
+    dlq-url: http://sqs.eu-west-1.localhost.localstack.cloud:4566/000000000000/booking-events-dlq.fifo
 
 logging:
   json-structure:

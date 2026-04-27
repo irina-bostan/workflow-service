@@ -44,13 +44,8 @@ management:
       probes:
         enabled: true
       group:
-        # Liveness: only the JVM/app state. External-dependency outages must NOT trigger
-        # a container restart — restarting won't fix Cognito or SQS.
         liveness:
           include: livenessState
-        # Readiness: app + things WITHOUT WHICH THIS POD CAN'T SERVE.
-        # Cognito/SQS are intentionally excluded — if they're down, every pod is down,
-        # removing pods from the LB makes things worse.
         readiness:
           include: readinessState, db, redis
   tracing:
@@ -83,11 +78,19 @@ duffel:
   api-token: ${DUFFEL_API_TOKEN:}
   default-origin: LHR
 
+spring.task.scheduling.pool.size: 4
+
 outbox:
   relay:
     # How often the outbox poller wakes up to publish PENDING events (ms).
     # Tighten for lower e2e latency to consumers; widen if DB poll cost grows.
     fixed-delay-ms: 2000
+
+booking-events:
+  consumer:
+    fixed-delay-ms: 1000
+  dlq:
+    fixed-delay-ms: 5000
 
 notification:
   executor:
@@ -104,5 +107,8 @@ springdoc:
     path: /swagger-ui.html
     url: /openapi.yaml
     display-request-duration: true
+  # api-docs MUST stay enabled — Swagger UI fetches /v3/api-docs/swagger-config to
+  # bootstrap, even with `swagger-ui.url` pointing at the static spec. Disabling this
+  # makes /swagger-ui.html load a blank page.
   api-docs:
-    enabled: false
+    enabled: true

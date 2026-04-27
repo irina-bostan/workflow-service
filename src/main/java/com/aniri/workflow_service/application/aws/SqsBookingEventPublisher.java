@@ -23,7 +23,9 @@ public class SqsBookingEventPublisher implements BookingEventPublisher {
     private final ObjectMapper objectMapper;
     private final AwsProperties awsProperties;
 
-    /** Synchronous: throws on send failure so the outbox relay leaves the row PENDING. */
+    /**
+     * Synchronous: throws on send failure so the outbox relay leaves the row PENDING.
+     */
     @Override
     public void publishBookingCreated(final BookingCreatedEvent event) {
         final String body = serialize(event);

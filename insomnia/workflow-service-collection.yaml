@@ -43,6 +43,14 @@ collection:
         authentication:
           type: bearer
           token: "{{ _.token }}"
+        scripts:
+          afterResponse: |-
+            if (insomnia.response.code === 201) {
+                const body = insomnia.response.json();
+                if (body && body.employeeId) {
+                    insomnia.environment.set('employeeId', body.employeeId);
+                }
+            }
         settings:
           renderRequestBody: true
           encodeUrl: true
@@ -68,7 +76,7 @@ collection:
           isPrivate: false
           description: Calls cognito-local to mint an ID token. The response script
             auto-stores AuthenticationResult.IdToken into the `token` env var.
-            The cognitoClientId env var is printed by local/setup-cognito.sh.
+            cognitoClientId is the fixed seed value in local/.cognito/seed/clients.json.
           sortKey: -1777207756936
         method: POST
         body:
@@ -89,7 +97,7 @@ collection:
             value: AWSCognitoIdentityProviderService.InitiateAuth
         scripts:
           afterResponse: >-
-            if (insomnia.response.status === 200) {
+            if (insomnia.response.code === 200) {
                 const body = insomnia.response.json();
                 if (body && body.AuthenticationResult && body.AuthenticationResult.IdToken) {
                     insomnia.environment.set('token', body.AuthenticationResult.IdToken);
@@ -128,7 +136,7 @@ collection:
           mimeType: application/json
           text: |-
             {
-              "employeeId": "EMP9876",
+              "employeeId": "{{ _.employeeId }}",
               "resourceType": "HOTEL",
               "destination": "NYC",
               "departureDate": "2027-11-05T14:00:00Z",
@@ -147,10 +155,13 @@ collection:
           token: "{{ _.token }}"
         scripts:
           afterResponse: |-
-            if (insomnia.response.status === 201) {
+            if (insomnia.response.code === 201) {
                 const body = insomnia.response.json();
                 if (body && body.id) {
                     insomnia.environment.set('bookingId', body.id);
+                }
+                if (body && body.tripId) {
+                    insomnia.environment.set('tripId', body.tripId);
                 }
             }
         settings:
@@ -176,7 +187,7 @@ collection:
           mimeType: application/json
           text: |-
             {
-              "employeeId": "EMP9876",
+              "employeeId": "{{ _.employeeId }}",
               "resourceType": "FLIGHT",
               "destination": "NYC",
               "departureDate": "2027-11-05T08:00:00Z",
@@ -193,6 +204,17 @@ collection:
         authentication:
           type: bearer
           token: "{{ _.token }}"
+        scripts:
+          afterResponse: |-
+            if (insomnia.response.code === 201) {
+                const body = insomnia.response.json();
+                if (body && body.id) {
+                    insomnia.environment.set('bookingId', body.id);
+                }
+                if (body && body.tripId) {
+                    insomnia.environment.set('tripId', body.tripId);
+                }
+            }
         settings:
           renderRequestBody: true
           encodeUrl: true
@@ -236,6 +258,100 @@ collection:
             send: true
             store: true
           rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings/{{ _.bookingId }}"
+        name: Get Booking by ID
+        meta:
+          id: req_getbooking01a2b3c4d5e6f7a8b9c0d1
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: Single-booking fetch. The UI polls this every 2 s while status is
+            PENDING, until it flips to CONFIRMED or CANCELLED. Set the
+            bookingId env var first.
+          sortKey: -1777207756840
+        method: GET
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings/{{ _.bookingId }}/cancel"
+        name: Cancel Booking (user-initiated)
+        meta:
+          id: req_cancelbk02b3c4d5e6f7a8b9c0d1e2
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: User-initiated cancel. Allowed from PENDING or CONFIRMED;
+            idempotent if already CANCELLED. Returns the updated booking.
+          sortKey: -1777207756850
+        method: POST
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/bookings/{{ _.bookingId }}/appointments"
+        name: List Appointments
+        meta:
+          id: req_listappt03c4d5e6f7a8b9c0d1e2f3
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: Returns all appointments scheduled within a booking, ordered by
+            scheduledAt ascending. 404 if booking does not exist.
+          sortKey: -1777207756860
+        method: GET
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/trips/{{ _.tripId }}/bookings"
+        name: List Trip Bookings
+        meta:
+          id: req_listtrip04d5e6f7a8b9c0d1e2f3a4
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: |
+            Returns every booking sharing the given tripId. Used to inspect the
+            sibling group before/after a cascade cancel.
+
+            ⚠ Set the `tripId` env var FIRST (copy from any booking response). If it's
+            empty the URL collapses to /trips//bookings → 400 with a "Type mismatch"
+            warning in the app log.
+          sortKey: -1777207756855
+        method: GET
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
       - url: "{{ _.baseUrl }}/bookings"
         name: Duplicate Booking (same Idempotency-Key) — shows idempotency
         meta:
@@ -252,7 +368,7 @@ collection:
           mimeType: application/json
           text: |-
             {
-              "employeeId": "EMP9876",
+              "employeeId": "{{ _.employeeId }}",
               "resourceType": "FLIGHT",
               "destination": "NYC",
               "departureDate": "2027-11-05T08:00:00Z",
@@ -433,12 +549,65 @@ collection:
       - url: "{{ _.baseUrl }}/actuator/prometheus"
         name: Prometheus Metrics
         meta:
-          id: req_e443844b2f4041b6a98349c597a1c564
+          id: req_promet01a2b3c4d5e6f7a8b9c0d1
           created: 1777207756940
           modified: 1777207756940
           isPrivate: false
-          description: Scrape endpoint for Prometheus / OTel collector. Public.
-          sortKey: -1777207756940
+          description: Plain-text Prometheus exposition format. Grep by metric name —
+            e.g. http_server_requests_seconds_count, hikaricp_connections_active,
+            jvm_threads_live_threads, or our custom outbox/booking counters.
+          sortKey: -1777207756938
+        method: GET
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: "{{ _.baseUrl }}/actuator/metrics/http.server.requests"
+        name: HTTP Latency Histogram (Actuator)
+        meta:
+          id: req_metric02b3c4d5e6f7a8b9c0d1e2
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: Detailed Micrometer view of http.server.requests with percentile
+            histogram (50/95/99). Add ?tag=uri:/bookings or ?tag=status:200 to slice.
+            Requires a Bearer token — actuator/metrics is gated by JWT (only
+            actuator/health, info, prometheus are public). Run "Get ID Token" first.
+          sortKey: -1777207756937
+        method: GET
+        authentication:
+          type: bearer
+          token: "{{ _.token }}"
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: global
+          cookies:
+            send: true
+            store: true
+          rebuildPath: true
+      - url: http://localhost:16686
+        name: Jaeger UI (open in browser)
+        meta:
+          id: req_jaeger03c4d5e6f7a8b9c0d1e2f3
+          created: 1777207756940
+          modified: 1777207756940
+          isPrivate: false
+          description: |
+            BROWSER-ONLY — Insomnia returns 200 with a blank page because Jaeger UI
+            is a SPA that boots from JavaScript. Right-click the URL → "Copy URL"
+            and paste into your browser, or just visit http://localhost:16686.
+
+            Once in the browser: select service "workflow-service" → Find Traces.
+            Or paste a traceId from a JSON log line into "Lookup by Trace ID" to
+            jump straight to that request's span tree (booking.create →
+            outbox.publish → booking.consumer.poll → booking.provider.reserve →
+            booking.confirm).
+          sortKey: -1777207756936
         method: GET
         settings:
           renderRequestBody: true
@@ -496,10 +665,11 @@ environments:
       data:
         baseUrl: http://localhost:8080
         cognitoUrl: http://localhost:9229
-        cognitoClientId: 6ox31ez0bokpz2uc42ltmeibb
+        cognitoClientId: devwflowlocalclient00000z
         cognitoUsername: tester@techquarter.local
         cognitoPassword: Test1234!
         employeeId: EMP9876
         bookingId: ""
+        tripId: ""
         token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkNvZ25pdG9Mb2NhbCJ9.eyJhdXRoX3RpbWUiOjE3NzcxNzk5MTUsImNsaWVudF9pZCI6IjZveDMxZXowYm9rcHoydWM0Mmx0bWVpYmIiLCJldmVudF9pZCI6IjkyMWFjOGViLWRiZGItNGQzYy1hMWI5LThhYTkxOTE5NGMxNSIsImlhdCI6MTc3NzE3OTkxNSwianRpIjoiNmYyMmY4MjktODBlMC00MDJhLWJkNzItMDkxYzIxYzk1MDA2Iiwic2NvcGUiOiJhd3MuY29nbml0by5zaWduaW4udXNlci5hZG1pbiIsInN1YiI6IjE5YzhmZjE4LThmNzUtNGQ1ZS1hNTkyLTgyZmM4OGExYzgzOSIsInRva2VuX3VzZSI6ImFjY2VzcyIsInVzZXJuYW1lIjoiMTljOGZmMTgtOGY3NS00ZDVlLWE1OTItODJmYzg4YTFjODM5IiwiZXhwIjoxNzc3MjY2MzE1LCJpc3MiOiJodHRwOi8vMC4wLjAuMDo5MjI5L2xvY2FsXzcwVm5qdkRTIn0.zpwO33dggxDWmFPROTBLK4G4jQcwyC1eoM2oRFtKNYOwJSSiPRH28VwF7Ei6bBZbGgjHye2yM6CcJ_d29v1zfAiSB1I36QNdoYo_UWcYpIHh42pm48LedKuuUV3MSSj_hmlK-vRFr4rRysQ0CpTDCrCzmuh1nnXVoUMyR_P9FSeo0RRdpi45TgyGwsZlpvh8FVCUW1iKX2yTnmAefRrctY4_Zn7viIjpuw8-fJ8jIhw8WVZpNx9XTEZjH1OQsIG14ZQqlEnw7ACMdoJiCcrxPZRJAZcYhRrMv0Z4WffrvLKce0JKnPPzbZ405-uone4bg_4VrEmx1BsUmB2IG9pv5g
       color: "#7d69cb"

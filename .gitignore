@@ -40,3 +40,9 @@ build/
 .DS_Store
 
 .claude/
+
+### cognito-local runtime state — seeded from local/.cognito/seed/ on first run.
+local/.cognito/db/
+
+### Expo env — copied from ui/.env.example by local/run-local.sh on first run.
+ui/.env

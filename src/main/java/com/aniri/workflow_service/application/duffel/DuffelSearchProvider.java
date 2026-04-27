@@ -38,7 +38,9 @@ public class DuffelSearchProvider {
     private static final int RESULT_LIMIT = 5;
     private static final String CABIN_CLASS = "economy";
     private static final int STAYS_RADIUS_KM = 10;
-    /** Duffel offers don't carry remaining-seat counts; the UI expects a number, so we stub one. */
+    /**
+     * Duffel offers don't carry remaining-seat counts; the UI expects a number, so we stub one.
+     */
     private static final int FLIGHT_AVAILABLE_SEATS_PLACEHOLDER = 9;
     private static final int ISO_LOCAL_DATETIME_LENGTH = 19;
 
@@ -57,9 +59,7 @@ public class DuffelSearchProvider {
                     : searchStays(request);
         } catch (final HttpClientErrorException e) {
             // 403 = "feature not enabled" (Stays often gated separately on Duffel accounts);
-            // 422 = invalid request shape; etc. These are user-actionable and benign at the
-            // log level — a WARN is enough. SearchService will decide whether to fall back
-            // to mock based on the empty result.
+            // 422 = invalid request shape; etc.
             log.warn("Duffel {} search returned {}: {}",
                     request.resourceType(), e.getStatusCode(), e.getResponseBodyAsString());
             return List.of();
@@ -208,5 +208,6 @@ public class DuffelSearchProvider {
         }
     }
 
-    private record LatLon(double latitude, double longitude) {}
+    private record LatLon(double latitude, double longitude) {
+    }
 }

@@ -51,8 +51,39 @@ public class BookingEntity extends AuditableEntity {
     @Column(name = "idempotency_key", unique = true, length = 255)
     private String idempotencyKey;
 
+    @Column(name = "trip_id", nullable = false)
+    private UUID tripId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
     private BookingStatus status = BookingStatus.PENDING;
+
+    @Column(name = "provider_ref", length = 100)
+    private String providerRef;
+
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
+    public void markConfirmed(final String providerRef) {
+        if (status != BookingStatus.PENDING) {
+            throw new IllegalStateException(
+                    "Cannot confirm booking " + id + " in status " + status);
+        }
+        this.status = BookingStatus.CONFIRMED;
+        this.providerRef = providerRef;
+    }
+
+    /**
+     * Allowed from PENDING (provider rejection) or CONFIRMED (user-initiated cancel after
+     * the booking settled). Rejects only the double-cancel case to keep CANCELLED terminal.
+     */
+    public void markCancelled(final String reason) {
+        if (status == BookingStatus.CANCELLED) {
+            throw new IllegalStateException(
+                    "Cannot cancel booking " + id + " — already CANCELLED");
+        }
+        this.status = BookingStatus.CANCELLED;
+        this.cancellationReason = reason;
+    }
 }

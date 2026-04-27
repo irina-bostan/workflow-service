@@ -10,6 +10,8 @@ public interface BookingMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "status", ignore = true) // server-controlled; default PENDING set by entity
+    @Mapping(target = "tripId", ignore = true)
+        // server-controlled; set explicitly in BookingService.create
     BookingEntity toEntity(Booking dto, String idempotencyKey);
 
     Booking toDto(BookingEntity entity);

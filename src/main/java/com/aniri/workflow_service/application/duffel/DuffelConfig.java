@@ -23,11 +23,6 @@ public class DuffelConfig {
 
     @Bean
     public RestClient duffelRestClient() {
-        // Duffel responses include many fields we don't model (created_at, expires_at,
-        // tax_amount, passenger_identity_documents_required, etc.). Without disabling this,
-        // a single new/unmodeled field on Duffel's side breaks every search with an
-        // UnrecognizedPropertyException — the global Spring Jackson config doesn't apply
-        // here because this RestClient uses its own dedicated ObjectMapper.
         var mapper = JsonMapper.builder()
                 .addModule(new JavaTimeModule())
                 .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)

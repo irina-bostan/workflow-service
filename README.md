@@ -7,7 +7,7 @@ Corporate travel booking workflow service for TechQuarter. REST API + companion 
 | Directory | What it is |
 |---|---|
 | [`src/`](src/) | **Backend** — Java 25 / Spring Boot 3.5 REST service. API-first via OpenAPI; transactional outbox for SQS events; HikariCP-tuned PostgreSQL access. |
-| [`ui/`](ui/) | **Mobile UI** — React Native + Expo (TypeScript). 5 screens, 6 API clients, jest-expo + RNTL test suite (23 tests). |
+| [`ui/`](ui/) | **Mobile UI** — React Native + Expo (TypeScript). 6 screens, 7 API clients, jest-expo + RNTL test suite (39 tests). |
 | [`infrastructure/`](infrastructure/) | **AWS CDK** (TypeScript). ECS Fargate + ALB + RDS Multi-AZ + ElastiCache + SQS FIFO + CloudWatch alarms. |
 | [`local/`](local/) | **One-command local stack**: `bash local/run-local.sh` provisions Docker Compose (PG, Redis, LocalStack, cognito-local), runs the bootstrapping scripts, syncs `ui/.env`, and starts the backend. |
 | [`docs/`](docs/) | Design, database schema, CI/CD pipeline, alerting strategy, performance + sizing. |
@@ -92,8 +92,12 @@ For sizing, bottleneck analysis, autoscaling triggers, and SLO targets see [`doc
 | `POST` | `/employees` | Register a new employee. |
 | `POST` | `/bookings` | Create a booking (requires `Idempotency-Key` header). |
 | `GET` | `/bookings` | List bookings by employee (paginated). |
+| `GET` | `/bookings/{bookingId}` | Fetch one booking — UI polls this while status is PENDING. |
+| `POST` | `/bookings/{bookingId}/cancel` | User-initiated cancel (allowed from PENDING or CONFIRMED). |
 | `GET` | `/bookings/search` | Search flights or hotels (Redis-cached, 5-min TTL; falls through to Duffel on miss). |
-| `POST` | `/bookings/{bookingId}/appointments` | Schedule a hotel appointment. |
+| `GET` | `/bookings/{bookingId}/appointments` | List appointments scheduled within a booking. |
+| `POST` | `/bookings/{bookingId}/appointments` | Schedule a hotel appointment (HOTEL bookings only). |
+| `GET` | `/trips/{tripId}/bookings` | List all bookings sharing a trip — UI uses this to show trip siblings on the detail screen. |
 
 Full spec: `/v3/api-docs` · UI: `/swagger-ui.html` · Insomnia collection: [`insomnia/`](insomnia/).
 
@@ -105,10 +109,10 @@ React Native + Expo (TypeScript). Code lives under [`ui/`](ui/).
 cd ui
 npm install
 npm start              # Expo dev server (iOS sim / Android emulator / physical device)
-npm test               # 23 tests across api/ + screens/ (jest-expo + RNTL)
+npm test               # 32 tests across api/ + screens/ + hooks/ (jest-expo + RNTL)
 ```
 
-Screens: `Search`, `BookingForm`, `Bookings`, `UpcomingBookings`, `Register` — wired through `@react-navigation/bottom-tabs` + `@react-navigation/native-stack`.
+Screens: `Search`, `BookingForm`, `Bookings`, `BookingDetail`, `UpcomingBookings`, `Register` — wired through `@react-navigation/bottom-tabs` + `@react-navigation/native-stack`. The Bookings and Upcoming tabs are stack navigators so users can drill into `BookingDetail`, which polls `GET /bookings/{id}` while status is PENDING and renders a workflow stepper (Submitted → Reserving → Confirmed/Cancelled). The bookings list groups by `tripId`: solo trips render as a single card, multi-booking trips render under a wrapping "Trip" card; trips bucket into upcoming (sorted by earliest departure ascending), past, and all-cancelled (each in its own collapsible accordion). The Bookings list refetches automatically on focus so it reflects state changes after the user drills into a booking and acts on it. Hotel bookings show an inline appointments section. The Cancel button is asymmetric: cancelling a flight cascades across the entire trip; cancelling a hotel cancels only that booking. The `BookingForm` auto-detects the user's most recent open trip and offers a toggle to link the new booking into it — that's how a flight + hotel get bound for the cascade.
 
 The app talks to the backend via axios with a Bearer-JWT interceptor; the token comes from cognito-local in dev. URLs are environment-configurable: set `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_COGNITO_URL` in `ui/.env` for stage/prod builds. Idempotency keys for booking creation use `expo-crypto.randomUUID()`. A startup-time `if (!__DEV__) throw` guard prevents release builds from accidentally shipping the bundled USER_PASSWORD_AUTH credentials — the production auth flow has to be replaced before a release build will run.
 

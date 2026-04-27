@@ -42,6 +42,7 @@ aws:
   sqs:
     enabled: true
     booking-events-queue-url: ${SQS_BOOKING_EVENTS_URL}
+    dlq-url: ${SQS_BOOKING_EVENTS_DLQ_URL:}
 
 logging:
   level:

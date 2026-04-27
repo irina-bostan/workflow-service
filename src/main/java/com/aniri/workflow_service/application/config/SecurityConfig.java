@@ -29,7 +29,8 @@ public class SecurityConfig {
             "/actuator/prometheus",
             "/openapi.yaml",
             "/swagger-ui.html",
-            "/swagger-ui/**"
+            "/swagger-ui/**",
+            "/v3/api-docs/**"
     };
 
     @Bean

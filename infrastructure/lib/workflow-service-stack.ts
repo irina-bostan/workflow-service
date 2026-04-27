@@ -90,6 +90,11 @@ export class WorkflowServiceStack extends cdk.Stack {
       stringValue: bookingEventsQueue.queueUrl,
     });
 
+    new ssm.StringParameter(this, 'SqsDlqUrl', {
+      parameterName: '/workflow-service/sqs-booking-events-dlq-url',
+      stringValue: bookingEventsDlq.queueUrl,
+    });
+
     // ─────────────────────────── ECS Cluster ────────────────────
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc,
@@ -158,8 +163,11 @@ export class WorkflowServiceStack extends cdk.Stack {
     // Grant permissions
     database.secret?.grantRead(taskDefinition.taskRole);
     bookingEventsQueue.grantSendMessages(taskDefinition.taskRole);
-    // Health indicator calls GetQueueAttributes; outbox relay only sends. Both covered:
+    // Outbox relay sends; the in-process BookingEventConsumer receives + deletes.
+    bookingEventsQueue.grantConsumeMessages(taskDefinition.taskRole);
     bookingEventsQueue.grant(taskDefinition.taskRole, 'sqs:GetQueueAttributes');
+    // DLQ poller drains poison messages and marks the booking CANCELLED.
+    bookingEventsDlq.grantConsumeMessages(taskDefinition.taskRole);
 
     // ADOT collector pushes to X-Ray + CloudWatch (metrics & logs).
     taskDefinition.taskRole.addManagedPolicy(
@@ -251,6 +259,19 @@ export class WorkflowServiceStack extends cdk.Stack {
       threshold: 80,
       evaluationPeriods: 2,
       alarmName: 'workflow-service-ecs-cpu',
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(new actions.SnsAction(alarmTopic));
+
+    // Any message in the DLQ means the booking workflow stalled — the redrive limit was
+    // exceeded and the booking has been auto-CANCELLED. Operator should investigate the
+    // upstream provider rather than treat this as routine.
+    new cloudwatch.Alarm(this, 'BookingDlqAlarm', {
+      metric: bookingEventsDlq.metricApproximateNumberOfMessagesVisible({ period: cdk.Duration.minutes(5) }),
+      threshold: 0,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmName: 'workflow-service-booking-dlq',
+      alarmDescription: 'Booking events landed in the DLQ — workflow stuck',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     }).addAlarmAction(new actions.SnsAction(alarmTopic));
 

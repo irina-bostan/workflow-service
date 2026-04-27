@@ -38,6 +38,12 @@ export function SearchScreen({ navigation }: Props) {
       Alert.alert('Validation', 'Destination is required');
       return;
     }
+    // Hotels need a check-out date — the booking POST will 422 otherwise. The "(optional)"
+    // label only applies to flights (one-way trips are valid).
+    if (resourceType === 'HOTEL' && !returnDate) {
+      Alert.alert('Validation', 'Hotel bookings need a check-out date');
+      return;
+    }
     setLoading(true);
     try {
       const data = await searchOptions({
@@ -78,13 +84,13 @@ export function SearchScreen({ navigation }: Props) {
           autoCapitalize="characters"
         />
         <DatePickerField
-          label="Departure date"
+          label={resourceType === 'HOTEL' ? 'Check-in date' : 'Departure date'}
           value={departureDate}
           onChange={setDepartureDate}
           minimumDate={new Date()}
         />
         <DatePickerField
-          label="Return date (optional)"
+          label={resourceType === 'HOTEL' ? 'Check-out date' : 'Return date (optional)'}
           value={returnDate}
           onChange={setReturnDate}
           minimumDate={departureDate ?? new Date()}

@@ -44,9 +44,18 @@ public class SearchService {
 
     private List<SearchResult> buildMockResults(final SearchRequest request) {
         final OffsetDateTime departure = request.departureDate();
-        return request.resourceType() == ResourceType.FLIGHT
-                ? mockFlights(request.destination(), departure)
-                : mockHotel(request.destination(), departure, request.returnDate());
+        if (request.resourceType() == ResourceType.FLIGHT) {
+            return mockFlights(request.destination(), departure);
+        }
+        // Hotel search without an explicit returnDate gets a default check-out one day after
+        // check-in — matches DuffelSearchProvider.searchStays. Without this, mockHotel would
+        // emit a SearchResult with arrivalTime=null, the UI would forward returnDate=undefined
+        // to POST /bookings, and the controller's validateBooking would 422 with
+        // "Hotel bookings require a returnDate". Belt-and-suspenders alongside the UI guard.
+        final OffsetDateTime checkOut = request.returnDate() != null
+                ? request.returnDate()
+                : (departure != null ? departure.plusDays(1) : null);
+        return mockHotel(request.destination(), departure, checkOut);
     }
 
     private List<SearchResult> mockFlights(final String destination, final OffsetDateTime departure) {

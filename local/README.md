@@ -10,13 +10,10 @@ Start the full local stack (Postgres on host, Redis + LocalStack + Jaeger + cogn
    ```
    Creates role `workflow` (password `workflow`) and databases `workflowdb` + `workflowdb_shadow`.
 
-2. **Cognito user pool, app client, and test user** (run after the stack is up — see step 1 of "Daily run"):
-   ```bash
-   bash local/setup-cognito.sh
-   ```
-   The script prints the generated **Pool ID**, **Client ID**, and the **issuer URI** to use. Paste those into:
-   - `src/main/resources/application-local.yaml` → `spring.security.oauth2.resourceserver.jwt.issuer-uri` and `jwk-set-uri`
-   - Insomnia env var `cognitoClientId`
+2. **Cognito** — no setup needed. The pool, app client, and test user are seeded
+   from `local/.cognito/seed/` into cognito-local on the first `run-local.sh`.
+   IDs are fixed (`local_devwflow` / `devwflowlocalclient00000z`); see
+   `setup-cognito.sh` for the full reference.
 
 ## Daily run
 
@@ -25,10 +22,12 @@ bash local/run-local.sh
 ```
 
 That script:
-1. `docker compose up -d` — starts Redis, LocalStack, Jaeger, cognito-local
-2. Waits for Postgres / Redis / LocalStack to be healthy
-3. Provisions LocalStack SQS queue + SSM params
-4. `mvn spring-boot:run -Dspring-boot.run.profiles=local`
+1. Seeds `local/.cognito/db/` from `local/.cognito/seed/` (only if empty)
+2. `docker compose up -d` — starts Redis, LocalStack, Jaeger, cognito-local
+3. Waits for Postgres / Redis / LocalStack to be healthy
+4. Provisions LocalStack SQS queues + SSM params
+5. Prints the (fixed) Cognito identifiers
+6. `mvn spring-boot:run -Dspring-boot.run.profiles=local`
 
 App will be on `http://localhost:8080`.
 
@@ -71,7 +70,7 @@ curl -s http://localhost:8080/actuator/health | jq
     "cognito": {
       "status": "UP",
       "details": {
-        "jwk-set-uri": "http://localhost:9229/local_70VnjvDS/.well-known/jwks.json",
+        "jwk-set-uri": "http://localhost:9229/local_devwflow/.well-known/jwks.json",
         "status-code": 200,
         "response-time-ms": 42
       }
@@ -106,7 +105,7 @@ curl -s http://localhost:8080/actuator/prometheus | grep http_server_requests_se
 open http://localhost:16686
 ```
 
-In Jaeger, hit any endpoint first (e.g. `GET /bookings?employeeId=...`), then in the UI select service `workflow-service` → Find Traces. Click a trace to see the span tree (HTTP server → JDBC → Duffel RestClient if applicable). The `traceId` in your application logs matches the trace ID in Jaeger — paste it into Jaeger's "Lookup by Trace ID" to jump straight to it.
+In Jaeger, hit any endpoint first (e.g. `GET /bookings?employeeId=...`), then in the UI select service `workflow-service` → Find Traces. Click a trace to see the span tree — HTTP server → `booking.create` → JDBC, plus separate traces for `outbox.publish` → `booking.consumer.poll` → `booking.provider.reserve` → `booking.confirm`. The `traceId` and the active observation name appear in your JSON application logs (`"traceId":"…","observation":"booking.create"`); paste a trace id into Jaeger's "Lookup by Trace ID" to jump straight to it.
 
 **Same paths in stage/prod**, behind the ALB:
 - ECS task health check pings `…/actuator/health/liveness` directly inside the task.
@@ -118,10 +117,12 @@ In Jaeger, hit any endpoint first (e.g. `GET /bookings?employeeId=...`), then in
 1. Run **Auth → Get ID Token** — response script writes the JWT to env var `token`.
 2. Run any protected request — `Authorization: Bearer {{ _.token }}` is set on the request's auth tab.
 
-If you get 401 after a fresh `setup-cognito.sh` run, double-check:
-- `application-local.yaml` `issuer-uri` matches the **pool ID** the script printed (e.g. `local_70VnjvDS`), not the pool name.
-- `local/.cognito/config.json` has `TokenConfig.IssuerDomain: "http://localhost:9229"` so tokens are minted with `iss: http://localhost:9229/<pool-id>` (cognito-local otherwise uses `0.0.0.0`).
-- Insomnia env var `cognitoClientId` matches the `Client ID` printed by the setup script.
+The pool ID (`local_devwflow`) and client ID (`devwflowlocalclient00000z`) are **fixed** — seeded from `local/.cognito/seed/` into the cognito-local DB on the first `run-local.sh`. The `db/` directory is gitignored so runtime mutations (refresh tokens etc.) don't churn. To reset to the seeded state: `rm -rf local/.cognito/db && bash local/run-local.sh`.
+
+If you get 401, double-check:
+- `application-local.yaml` `issuer-uri` is `http://localhost:9229/local_devwflow`.
+- `local/.cognito/config.json` has `TokenConfig.IssuerDomain: "http://localhost:9229"` so tokens are minted with `iss: http://localhost:9229/local_devwflow` (cognito-local otherwise uses `0.0.0.0`).
+- Insomnia env var `cognitoClientId` is `devwflowlocalclient00000z`.
 
 ## Stop everything
 

@@ -24,7 +24,7 @@ bash local/run-local.sh                   # provision + start backend
 bash local/run-local.sh --no-start        # provision only
 
 # UI
-cd ui && npm install && npm test          # 23 tests across api + screens (jest-expo + RNTL)
+cd ui && npm install && npm test          # 39 tests across api + screens + hooks (jest-expo + RNTL)
 cd ui && npm start                        # Expo dev server
 ```
 
@@ -41,7 +41,9 @@ cd ui && npm start                        # Expo dev server
 
 Spec-first: `src/main/resources/static/openapi.yaml` is the source of truth. The OpenAPI Generator Maven plugin produces `*ApiDelegate` interfaces and DTOs at build time; we implement the delegates. Each endpoint maps to a `@Transactional` Spring service.
 
-**Booking creation** uses **DB-backed idempotency** (`bookings.idempotency_key` UNIQUE) and a **transactional outbox**: `BookingService` writes the booking row and an `outbox` row in one transaction, then `OutboxRelay` (`@Scheduled`, 500 ms in prod) claims pending rows with `FOR UPDATE SKIP LOCKED LIMIT 100` and publishes to SQS. Safe to run on every ECS task — no double-publish.
+**Booking creation** uses **DB-backed idempotency** (`bookings.idempotency_key` UNIQUE) and a **transactional outbox**: `BookingService` writes the booking row (status `PENDING`) and an `outbox` row in one transaction, then `OutboxRelay` (`@Scheduled`, 500 ms in prod) claims pending rows with `FOR UPDATE SKIP LOCKED LIMIT 100` and publishes to SQS. Safe to run on every ECS task — no double-publish.
+
+**Workflow loop**: `BookingEventConsumer` long-polls the SQS queue, calls `BookingProvider` (mocked by `MockBookingProvider` — Duffel orders are too slow for 100 tps in this assessment), and transitions the booking via `BookingService.confirm/cancel`. State guards on `BookingEntity.markConfirmed/markCancelled` enforce PENDING-only transitions; service-level methods are idempotent under SQS at-least-once redelivery. A second poller drains the DLQ and auto-cancels bookings that exceeded the redrive limit. UI (`BookingDetailScreen`) polls `GET /bookings/{id}` every 2 s and renders a stepper (Submitted → Reserving → Confirmed/Cancelled).
 
 **Search** is `@Cacheable` against Redis (5-min TTL); cache miss falls through to `DuffelSearchProvider`.
 
@@ -50,15 +52,15 @@ Spec-first: `src/main/resources/static/openapi.yaml` is the source of truth. The
 com.aniri.workflow_service/
 ├── WorkflowServiceApplication.java
 ├── application/
-│   ├── aws/                 # SqsBookingEventPublisher, NoOpBookingEventPublisher, SqsConfig
+│   ├── aws/                 # SqsBookingEventPublisher, NoOpBookingEventPublisher, SqsConfig, BookingEventConsumer
 │   ├── config/              # SecurityConfig, AuditingConfig, etc.
-│   ├── duffel/              # DuffelSearchProvider, DuffelConfig
+│   ├── duffel/              # DuffelSearchProvider, DuffelConfig, MockBookingProvider
 │   ├── health/              # custom liveness / readiness indicators
 │   ├── outbox/              # OutboxRelay (@Scheduled)
 │   └── properties/          # @ConfigurationProperties classes (CorsProperties, AwsProperties, …)
 ├── domain/
 │   ├── appointment/         # AppointmentService + model/{Entity, Repository, Mapper}
-│   ├── booking/             # BookingService + model/{Entity, Repository, Mapper}, exception/
+│   ├── booking/             # BookingService, BookingProvider, BookingEventPublisher + model/{Entity, Repository, Mapper}, exception/
 │   ├── employee/            # EmployeeService + model + exception/
 │   ├── outbox/              # OutboxEntry, OutboxRepository, OutboxStatus
 │   ├── persistence/         # AuditableEntity (@MappedSuperclass)
@@ -75,8 +77,12 @@ com.aniri.workflow_service/
 | `POST` | `/employees` | Register employee. Unique on `employeeId` and `email`. |
 | `POST` | `/bookings` | Requires `Idempotency-Key: <UUID>` header. DB unique on the column dedupes replays. |
 | `GET` | `/bookings` | Paginated list by `employeeId`. |
+| `GET` | `/bookings/{bookingId}` | Single booking — UI polls this while status is PENDING. |
+| `POST` | `/bookings/{bookingId}/cancel` | User-initiated cancel; entity guard allows PENDING|CONFIRMED → CANCELLED, idempotent on already-CANCELLED. |
 | `GET` | `/bookings/search` | `@Cacheable` against Redis. |
+| `GET` | `/bookings/{bookingId}/appointments` | List appointments scheduled within a booking. |
 | `POST` | `/bookings/{bookingId}/appointments` | HOTEL bookings only. |
+| `GET` | `/trips/{tripId}/bookings` | List bookings within a trip (sibling lookup for the cascade UX). |
 
 Swagger UI: `http://localhost:8080/swagger-ui.html`
 
@@ -84,6 +90,10 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 
 - **Idempotency**: column-based on `bookings.idempotency_key` (UNIQUE). The previous Redis-backed approach was dropped — DB constraint is simpler, transactional, and survives Redis restarts.
 - **Transactional outbox**: see `OutboxRelay` + `OutboxRepository.claimPending(N)` (native query with `FOR UPDATE SKIP LOCKED`). Hourly `purgeSent()` deletes SENT > 24h; per-table autovacuum tuned in migration `V5__tune_outbox_autovacuum.sql`.
+- **Workflow consumer**: `BookingEventConsumer` polls main queue + DLQ via `@Scheduled` (long-poll `WaitTimeSeconds=20`, `spring.task.scheduling.pool.size=4` so it doesn't starve `OutboxRelay`). Success → `markConfirmed(providerRef)` + delete; terminal rejection → `markCancelled(reason)` + delete; transient errors → leave for SQS redrive. DLQ is auto-cancelled with reason "Redelivery limit exceeded". CDK alarm fires on `ApproximateNumberOfMessagesVisible > 0` in DLQ.
+- **Observability annotations**: workflow-critical service methods carry `@Observed(name=...)` (`BookingService.create/confirm/cancel/cancelByUser`, `OutboxRelay.publishPending`, `BookingEventConsumer.pollMain/pollDlq`, `MockBookingProvider.reserve`, `AppointmentService.create`). `ObservabilityConfig` registers `ObservedAspect` plus a custom `ObservationHandler` that pushes the current observation name into MDC under key `observation`, so the JSON log encoder emits it as a top-level field — grep by `"observation":"booking.create"` to scope to one method's output. Trace context is NOT yet propagated through SQS message attributes, so the outbox→consumer hop produces two separate traces (future work).
+- **Trip grouping with asymmetric cascade-cancel**: every booking carries a `trip_id` (Flyway `V7` adds the column with `gen_random_uuid()` default; entity field `tripId` populated explicitly by `BookingService.create`). On `POST /bookings`, the caller may supply an existing `tripId` to link the new booking into that trip; the service validates same-employee ownership before accepting. `BookingService.cancelByUser` is asymmetric — cancelling a `FLIGHT` cascades across every PENDING/CONFIRMED sibling in the trip (flight is the trip anchor); cancelling a `HOTEL` (or any non-flight resource) cancels only that booking, leaving the rest of the trip active. The UI's BookingDetailScreen mirrors this: button label flips to "Cancel trip (N bookings)" only on flight detail, and BookingFormScreen auto-detects the user's most recent open trip and offers a toggle to link the new booking into it.
+- **Exception-handler logging**: `GlobalExceptionHandler` logs every exception path. 4xx (client errors — validation, missing header/param, not-found, duplicate, invalid booking) at `WARN` so they're visible without flooding error dashboards; 5xx (server errors — `DataAccessException`, generic) at `ERROR` with the stack trace. All log lines carry `traceId/spanId/observation` from MDC for one-grep correlation with traces.
 - **Async logging**: `logback-spring.xml` wraps `CONSOLE_JSON` in an `AsyncAppender` (`neverBlock=true`) so request threads never stall on stdout.
 - **Autoscaling**: primary trigger is ALB `RequestCountPerTarget=80`; CPU at 80 % is a safety net only (this app is I/O-bound and CPU never hits 60 % at peak).
 - **Entities**: extend `AuditableEntity` (`@MappedSuperclass`) — `createdAt`, `updatedAt`, `@Version`. PKs are `UUID` via `GenerationType.UUID`.
@@ -101,7 +111,7 @@ workflow-service/
 │   ├── perf/                   # PERFORMANCE.md (sizing, bottlenecks, autoscaling, SLOs)
 │   ├── ci_cd/                  # PIPELINE.md
 │   └── alerting/               # ALERTING.md, cloudwatch-alarms.json, cloudwatch-dashboard.json
-├── local/                      # docker-compose.yml, run-local.sh, setup-cognito.sh
+├── local/                      # docker-compose.yml, run-local.sh, setup-cognito.sh, .cognito/seed/
 ├── insomnia/                   # Insomnia v4 collection
 ├── Dockerfile                  # Multi-stage eclipse-temurin:25
 ├── LICENSE                     # Apache 2.0
@@ -165,7 +175,7 @@ Distilled from this project. Use these as defaults; deviate when something speci
 
 ## Phase 7: Local stack as one command
 
-- `bash local/run-local.sh` provisions everything (Compose up + Cognito-local pool/client + LocalStack SQS/SSM + writes Cognito Client ID into `ui/.env`). One entry point. Keep modular sub-scripts (`setup-cognito.sh`, etc.) but don't make the user invoke them in order.
+- `bash local/run-local.sh` provisions everything (Compose up + LocalStack SQS/SSM + cognito-local seeded from `local/.cognito/seed/` with fixed pool/client IDs). One entry point. `setup-cognito.sh` is a status printer — no AWS-CLI calls; the seed approach makes the IDs stable so `application-local.yaml`, `ui/.env`, and the Insomnia collection can hardcode them.
 
 ## Phase 8: UI
 

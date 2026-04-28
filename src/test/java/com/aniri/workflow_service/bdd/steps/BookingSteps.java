@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static java.util.UUID.randomUUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class BookingSteps {
@@ -45,6 +46,7 @@ public class BookingSteps {
                 .returnDate(OffsetDateTime.parse("2027-11-08T18:00:00Z"))
                 .travelerCount(1)
                 .costCenterRef("CC-456")
+                .tripId(randomUUID())
                 .build());
         world.setCreatedBookingId(saved.getId().toString());
     }

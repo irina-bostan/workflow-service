@@ -30,9 +30,8 @@
     <awssdk.version>2.29.0</awssdk.version>
     <openapi-generator.version>7.21.0</openapi-generator.version>
     <cucumber.version>7.20.1</cucumber.version>
-    <!-- Override Spring Boot 3.5.3's transitively-pinned OTel 1.49.0 — that version
-         bundles a shaded jctools that hits sun.misc.Unsafe.objectFieldOffset, which
-         Java 25 flags as terminally deprecated. 1.60+ ships a VarHandle-based jctools. -->
+    <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
+    <maven-failsafe-plugin.version>3.5.5</maven-failsafe-plugin.version>
     <opentelemetry.version>1.60.1</opentelemetry.version>
   </properties>
 
@@ -335,11 +334,6 @@
             <exclude>**/*IT.java</exclude>
             <exclude>**/*IntegrationTest.java</exclude>
           </excludes>
-          <!-- Cucumber engine auto-discovers .feature files; point it at nothing during `mvn test`
-               so BDD scenarios only execute on `mvn verify`. -->
-          <systemPropertyVariables>
-            <cucumber.features>classpath:no-such-features</cucumber.features>
-          </systemPropertyVariables>
         </configuration>
       </plugin>
 

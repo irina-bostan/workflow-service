@@ -36,9 +36,99 @@
             <stringProp name="Header.name">Accept</stringProp>
             <stringProp name="Header.value">application/json</stringProp>
           </elementProp>
+          <!-- Bearer token populated by the "Setup - acquire JWT" thread group below.
+               Resolved per-sample, so requests in the steady/peak/stress groups pick up
+               the token after setup has run. cognito-local ignores unknown headers, so
+               sending an empty value during the auth request itself is harmless. -->
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">Authorization</stringProp>
+            <stringProp name="Header.value">Bearer ${__P(token,)}</stringProp>
+          </elementProp>
         </collectionProp>
       </HeaderManager>
       <hashTree/>
+
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="Setup - acquire JWT from cognito-local" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">stoptestnow</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">1</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST cognito InitiateAuth" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{
+  "AuthFlow": "USER_PASSWORD_AUTH",
+  "ClientId": "${__P(cognito.clientId,devwflowlocalclient00000z)}",
+  "AuthParameters": {
+    "USERNAME": "${__P(cognito.username,tester@techquarter.local)}",
+    "PASSWORD": "${__P(cognito.password,Test1234!)}"
+  }
+}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="HTTPSampler.domain">${__P(cognito.host,localhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(cognito.port,9229)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">${__P(cognito.protocol,http)}</stringProp>
+          <stringProp name="HTTPSampler.path">/</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <!-- Local override so the cognito request uses the AWS-specific content type
+               instead of the global application/json. Other headers (Authorization etc.)
+               from the global HeaderManager merge in, but Content-Type is replaced. -->
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Cognito headers" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/x-amz-json-1.1</stringProp>
+              </elementProp>
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">X-Amz-Target</stringProp>
+                <stringProp name="Header.value">AWSCognitoIdentityProviderService.InitiateAuth</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract IdToken" enabled="true">
+            <stringProp name="JSONPostProcessor.referenceNames">IdToken</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.AuthenticationResult.IdToken</stringProp>
+            <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+          </JSONPostProcessor>
+          <hashTree/>
+          <!-- JMeter `vars` are per-thread; we promote IdToken to a JMeter property so
+               every thread group can read it via ${__P(token,)}. Without this, the
+               token is invisible to the steady/peak/stress thread groups. -->
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Promote token to property" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="script">if (vars.get("IdToken") != null) { props.put("token", vars.get("IdToken")) }</stringProp>
+          </JSR223PostProcessor>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Auth must be 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">cognito-local auth failed; check seed credentials</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">40</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
 
       <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="Setup - register perf employee" enabled="true">
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
@@ -83,6 +173,19 @@
             <boolProp name="Assertion.assume_success">false</boolProp>
             <intProp name="Assertion.test_type">40</intProp>
           </ResponseAssertion>
+          <hashTree/>
+          <!-- 409 means the perf employee was already seeded by a previous run — that's
+               accepted by the assertion above, but JMeter still flags 4xx samples as
+               failed by default and the perf plugin then trips the build's error
+               threshold. Mark the sample successful for the accepted codes so
+               re-running the smoke against a populated DB doesn't break CI. -->
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Mark 201/409 as successful" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="script">if (prev.getResponseCode() == "201" || prev.getResponseCode() == "409") { prev.setSuccessful(true) }</stringProp>
+          </JSR223PostProcessor>
           <hashTree/>
         </hashTree>
       </hashTree>

@@ -141,6 +141,38 @@ CI/CD: [`docs/ci_cd/PIPELINE.md`](docs/ci_cd/PIPELINE.md). Alerting: [`docs/aler
 | Performance | [`docs/perf/PERFORMANCE.md`](docs/perf/PERFORMANCE.md) | Production sizing, bottlenecks, autoscaling, SLO targets, local-vs-prod interpretation. |
 | Project guide / templating playbook | [`CLAUDE.md`](CLAUDE.md) | How the repo is organised + a phase-by-phase playbook for templating a similar project from scratch (incl. pitfalls to avoid). |
 
+## Definition of Done
+
+A change is ready to merge when **all "always" items pass**, plus any "if you touched X" item that applies. The same list lives in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) so GitHub renders it as a checklist on every PR.
+
+**Always**
+- `mvn verify` green (102 unit + 7 IT + 9 Cucumber, all in `mvn verify -B`)
+- `cd ui && npx tsc --noEmit && npm test` green (39 tests across api/ + screens/ + hooks/)
+- New code paths covered by *some* test — unit, slice, IT, or BDD scenario, depending on layer
+
+**If you touched the booking-create hot path** (`src/main/**/booking/**`, `application/outbox/**`, `application/aws/BookingEventConsumer*`)
+- Bring up the local stack (`bash local/run-local.sh`)
+- Smoke-perf the flow:
+  ```bash
+  rm -rf target/jmeter/reports && mvn -Pperf verify -DskipTests -DskipITs \
+    -Dperf.steady.duration=10 -Dperf.peak.duration=10 -Dperf.stress.duration=5
+  ```
+- In the summary line, look for `Err: 0 (0.00%)` and `Avg < 50ms` — anything else means the change regressed throughput or correctness on the hot path. Full SLO validation is a separate stage-side run; this is just the regression gate.
+
+**If you touched the OpenAPI spec** (`src/main/resources/static/openapi.yaml`)
+- `mvn compile` regenerates the delegate stubs — confirm the impl class still satisfies the interface
+- Update [`insomnia/workflow-service-collection.yaml`](insomnia/workflow-service-collection.yaml) so the new/changed endpoint has a request entry; reuse the env-var capture pattern (`afterResponse` → `insomnia.environment.set(...)`)
+
+**If you added a Flyway migration** (`src/main/resources/db/migration/V<N>__*.sql`)
+- Bumped to the next free `V<N>` (last is `V8`)
+- Repository / IT coverage for any new column or index (mirror `BookingRepositoryIT`)
+- Test profile (`application-test.yaml`) still works since `ddl-auto=create-drop` builds from JPA entities, not Flyway — entity annotations must match the migration
+
+**If you changed cross-component flow**
+- README endpoint table updated (`## REST endpoints`)
+- `CLAUDE.md` Key-Design bullet added or revised
+- `docs/design/ARCHITECTURE.md` updated where relevant — the workflow / trip-grouping / state-machine sections are the most volatile
+
 ## License & contributors
 
 [Apache License 2.0](LICENSE) © 2026 Irina Bostan. See [`CONTRIBUTORS.md`](CONTRIBUTORS.md) for authorship details and disclosure of AI assistance.

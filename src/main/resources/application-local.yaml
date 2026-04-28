@@ -53,7 +53,10 @@ logging:
 # Local uses the Duffel sandbox. Without this block, DuffelSearchProvider is
 # not registered as a bean (its @ConditionalOnProperty gate stays false) and
 # SearchService falls back to buildMockResults.
+# DUFFEL_API_TOKEN is sourced from the environment (GitHub Actions secret in CI,
+# personal env var locally — see local/run-local.sh or your shell profile). Never
+# commit a real token here, even a sandbox one.
 duffel:
   enabled: true
-  api-token: ${DUFFEL_API_TOKEN:duffel_test_8N1wXfJpediZYaLZdoN3W3QZzXsdkENl_H6L55HqGnL}
+  api-token: ${DUFFEL_API_TOKEN:}
   default-origin: LHR

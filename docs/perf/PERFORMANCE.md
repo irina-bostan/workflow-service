@@ -286,6 +286,8 @@ The ALB-level metric (`TargetResponseTime`) aggregates across all routes, so the
 
 The `mvn -Pperf verify` plan in `src/test/jmeter/workflow-load.jmx` runs against a Docker-Compose-backed local stack (Postgres + Redis + LocalStack). It's useful for some questions and misleading for others; this section is the contract for which is which.
 
+The plan starts with two `setUp` thread groups that run sequentially before steady/peak/stress: (1) **acquire JWT** — a single `POST /` to cognito-local with the seeded `USER_PASSWORD_AUTH` credentials; the response's `AuthenticationResult.IdToken` is extracted via JSON Path and promoted to a JMeter property, then injected as `Authorization: Bearer …` on every subsequent request via the global Header Manager. (2) **register the perf employee** (idempotent — accepts 201 or 409). If cognito-local isn't running or the seed credentials don't match, the auth assertion fails and the whole test stops with `stoptestnow` — no point measuring throughput against a flood of 401s.
+
 ### 5.1 What translates from local to prod
 
 These are properties of the code or workload, not the environment, so local numbers carry over directly:
